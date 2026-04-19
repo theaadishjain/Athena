@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+langgraph
+langchain-google-genai
+pydantic
+pydantic-settings
+pypdf
+chromadb
+sqlalchemy
+aiosqlite
+python-jose[cryptography]
+httpx

@@ -1,0 +1,307 @@
+@import "tailwindcss";
+
+/* ─── Tailwind v4 Theme Tokens ─────────────────────────── */
+
+@theme inline {
+  --color-background: #0c0c0c;
+  --color-foreground: #e8e8e8;
+  --color-primary: #a855f7;
+  --color-primary-light: #c084fc;
+  --color-primary-dark: #9333ea;
+  --color-accent: #a855f7;
+  --color-accent-2: #c084fc;
+  --color-surface: #141414;
+  --color-surface-elevated: #1a1a1a;
+  --color-surface-hover: #222222;
+  --color-border: #1e1e1e;
+  --color-border-light: #2a2a2a;
+  --color-muted: #888888;
+  --color-success: #22c55e;
+  --color-error: #ef4444;
+  --color-warning: #f59e0b;
+  --font-sans: "Outfit", system-ui, sans-serif;
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+}
+
+/* ─── Base ─────────────────────────────────────────────── */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+
+/* ─── Surface / Card Utilities ─────────────────────────── */
+
+.surface-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+}
+
+.glass-card {
+  background: rgba(20, 20, 20, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+}
+
+/* ─── Gradient Text ────────────────────────────────────── */
+
+.text-gradient {
+  background: linear-gradient(135deg, #a855f7 0%, #c084fc 50%, #e879f9 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gradient-hero {
+  background: linear-gradient(135deg, #7c3aed 0%, #a855f7 40%, #e879f9 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Agent Badge Colours ──────────────────────────────── */
+
+.badge-planner    { background: rgba(168, 85, 247, 0.12); color: #c084fc; }
+.badge-summarizer { background: rgba(56, 189, 248, 0.12); color: #38bdf8; }
+.badge-advisor    { background: rgba(168, 85, 247, 0.12); color: #a855f7; }
+.badge-coordinator { background: rgba(251, 191, 36, 0.12); color: #fbbf24; }
+
+/* ─── Animations ───────────────────────────────────────── */
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 0.4; }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
+.animate-shimmer {
+  transform: translateX(-100%);
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  animation: marquee 30s linear infinite;
+}
+
+/* ─── Custom Selection ─────────────────────────────────── */
+
+::selection {
+  background: rgba(168, 85, 247, 0.25);
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 2px solid rgba(168, 85, 247, 0.5);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* ─── Noise Overlay ────────────────────────────────────── */
+
+.noise-overlay::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  background-image: url('data:image/svg+xml,%3Csvg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"%3E%3Cfilter id="noiseFilter"%3E%3CfeTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" stitchTiles="stitch"/%3E%3C/filter%3E%3Crect width="100%25" height="100%25" filter="url(%23noiseFilter)"/%3E%3C/svg%3E');
+  opacity: 0.02;
+  z-index: 1;
+  mix-blend-mode: overlay;
+}
+
+/* ─── Card Glow ────────────────────────────────────────── */
+
+.card-glow {
+  position: relative;
+}
+.card-glow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  background: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(168,85,247,0.06), transparent 40%);
+}
+.card-glow:hover::after {
+  opacity: 1;
+}
+
+/* ─── Sidebar / Dashboard Layout ───────────────────────── */
+
+.sidebar-layout {
+  display: flex;
+  min-height: 100vh;
+}
+.sidebar-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Chat Prose / LaTeX ──────────────────────────────── */
+
+.prose-chat {
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--color-foreground);
+}
+.prose-chat p {
+  margin: 0 0 0.75rem;
+}
+.prose-chat p:last-child { margin-bottom: 0; }
+
+.prose-chat h1, .prose-chat h2, .prose-chat h3 {
+  font-weight: 600;
+  color: var(--color-foreground);
+  margin: 1.25rem 0 0.5rem;
+  line-height: 1.3;
+}
+.prose-chat h1 { font-size: 18px; }
+.prose-chat h2 { font-size: 16px; }
+.prose-chat h3 { font-size: 14px; }
+
+.prose-chat ul, .prose-chat ol {
+  margin: 0.5rem 0 0.75rem;
+  padding-left: 1.5rem;
+}
+.prose-chat ul { list-style: disc; }
+.prose-chat ol { list-style: decimal; }
+.prose-chat li {
+  margin: 0.35rem 0;
+  font-size: 14px;
+  line-height: 1.65;
+}
+.prose-chat li ul, .prose-chat li ol {
+  margin: 0.25rem 0;
+}
+
+.prose-chat strong {
+  font-weight: 600;
+  color: var(--color-foreground);
+}
+
+.prose-chat code {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 12px;
+  background: var(--color-surface);
+  color: #e2e8f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+}
+
+/* ─── Syntax-highlighted Code Blocks ──────────────────── */
+
+.code-block {
+  margin: 0.75rem 0;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+  background: #0d1117;
+}
+.code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: #161b22;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.code-lang {
+  font-size: 11px;
+  font-weight: 500;
+  color: #8b949e;
+  font-family: monospace;
+  text-transform: lowercase;
+}
+.copy-btn {
+  font-size: 11px;
+  color: #8b949e;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+.copy-btn:hover {
+  color: #e6edf3;
+  border-color: rgba(255,255,255,0.25);
+}
+.code-block pre {
+  margin: 0;
+  padding: 16px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.code-block pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  color: inherit;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+}
+
+/* ─── KaTeX ────────────────────────────────────────────── */
+
+.prose-chat .katex-display {
+  margin: 1rem 0;
+  overflow-x: auto;
+}
+
+.prose-chat .katex {
+  font-size: 1.1em;
+  font-family: inherit;
+}
