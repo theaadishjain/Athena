@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { UserButton, useUser, useAuth } from "@clerk/nextjs";
 import { useEffect, useState, useCallback } from "react";
 import type { ChatSessionMeta } from "@/lib/types";
-import { listSessions, createSession } from "@/lib/api";
+import { listSessions } from "@/lib/api";
 import { setCurrentSession } from "@/lib/session";
 
 const NAV_ITEMS = [
@@ -61,9 +61,11 @@ export default function Sidebar() {
 
   // Load active session id from sessionStorage
   useEffect(() => {
-    const id = sessionStorage.getItem("studyco_current_session");
+    const id = sessionStorage.getItem("athena_current_session") || 
+               sessionStorage.getItem("studyco_current_session");
     if (id) setActiveSessionId(id);
-  }, []);
+    else setActiveSessionId(null);
+  }, [pathname]);
 
   // Fetch recent sessions list
   const fetchSessions = useCallback(async () => {
@@ -85,22 +87,13 @@ export default function Sidebar() {
   }, [fetchSessions]);
 
   // New Chat
-  const handleNewChat = useCallback(async () => {
-    try {
-      const token = await getToken();
-      if (!token) return;
-      const newSession = await createSession(token);
-      setCurrentSession(newSession.id);
-      setActiveSessionId(newSession.id);
-      setSessions((prev) => [
-        { id: newSession.id, title: "New Chat", created_at: new Date().toISOString() },
-        ...prev,
-      ]);
-      router.push("/chat");
-    } catch {
-      router.push("/chat");
-    }
-  }, [getToken, router]);
+  const handleNewChat = useCallback(() => {
+    sessionStorage.removeItem("athena_current_session");
+    sessionStorage.removeItem("studyco_current_session");
+    setActiveSessionId(null);
+    router.push("/chat");
+    // If already on chat, the key/mount check in chat/page.tsx will handle the reset
+  }, [router]);
 
   // Click on a past session
   const handleSessionClick = useCallback(

@@ -74,7 +74,11 @@ export default function DashboardPage() {
   const handleChatSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
-    router.push(`/chat?q=${encodeURIComponent(chatInput.trim())}`);
+    // Store pending query and clear current session so chat starts fresh
+    sessionStorage.setItem("athena_pending_query", chatInput.trim());
+    sessionStorage.removeItem("athena_current_session");
+    sessionStorage.removeItem("studyco_current_session");
+    router.push("/chat");
   };
 
   return (

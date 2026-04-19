@@ -19,6 +19,8 @@ import { useSession, setCurrentSession, resetCurrentSession } from "@/lib/sessio
 import { renderWithLatex } from "@/lib/renderMarkdown";
 
 export default function ChatPage() {
+  const [chatKey, setChatKey] = useState(0);
+
   return (
     <Suspense
       fallback={
@@ -29,12 +31,12 @@ export default function ChatPage() {
         </DashboardLayout>
       }
     >
-      <ChatPageContent />
+      <ChatPageContent key={chatKey} onNewChat={() => setChatKey(prev => prev + 1)} />
     </Suspense>
   );
 }
 
-function ChatPageContent() {
+function ChatPageContent({ onNewChat }: { onNewChat: () => void }) {
   const searchParams = useSearchParams();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -56,28 +58,34 @@ function ChatPageContent() {
         const token = await getToken();
         if (!token) return;
 
-        // Check if we have an existing session in sessionStorage
-        const existingId = sessionStorage.getItem("studyco_current_session");
+        // Read canonical session key only
+        const existingId = sessionStorage.getItem("athena_current_session");
 
         if (existingId) {
-          // Load messages for existing session
           setCurrentSessionId(existingId);
           try {
             const msgs = await getSessionMessages(existingId, token);
             if (!cancelled) setMessages(msgs);
           } catch {
-            // Session may have expired — create fresh
+            // Session expired or deleted — start fresh
+            if (!cancelled) setCurrentSessionId(null);
           }
         } else {
-          // Create a new session
-          const newSession = await createSession(token);
-          if (!cancelled) {
-            setCurrentSession(newSession.id);
-            setCurrentSessionId(newSession.id);
+          // No session yet — lazy creation on first message
+          if (!cancelled) setCurrentSessionId(null);
+        }
+
+        // Check for pending query from dashboard handoff
+        if (!cancelled) {
+          const pending = sessionStorage.getItem("athena_pending_query");
+          if (pending) {
+            sessionStorage.removeItem("athena_pending_query");
+            // Small delay so the component is fully mounted
+            setTimeout(() => handleSend(pending), 50);
           }
         }
       } catch {
-        // Auth or network error — continue without persistence
+        if (!cancelled) setError("Connection failed");
       }
     }
 
@@ -96,23 +104,9 @@ function ChatPageContent() {
 
   // ── New Chat ─────────────────────────────────────────────
   const handleNewChat = useCallback(async () => {
-    try {
-      const token = await getToken();
-      if (!token) return;
-      const newSession = await createSession(token);
-      setCurrentSession(newSession.id);
-      setCurrentSessionId(newSession.id);
-      setMessages([]);
-      setLoadingState("idle");
-      setError(null);
-    } catch {
-      // Fallback: reset locally
-      const id = resetCurrentSession();
-      setCurrentSessionId(id);
-      setMessages([]);
-      setLoadingState("idle");
-    }
-  }, [getToken]);
+    resetCurrentSession();
+    onNewChat();
+  }, [onNewChat]);
 
   // ── Send message ─────────────────────────────────────────
   const handleSend = useCallback(async (overrideInput?: string) => {
@@ -139,11 +133,28 @@ function ChatPageContent() {
 
     let finalContent = "";
     let finalAgent = "";
+    let activeSessionId = currentSessionId;
+
+    // Create session if it doesn't exist (Bug 2 fix)
+    if (!activeSessionId) {
+      try {
+        const token = await getToken();
+        if (!token) throw new Error("Auth failed");
+        const newSession = await createSession(token);
+        activeSessionId = newSession.id;
+        setCurrentSession(newSession.id);
+        setCurrentSessionId(newSession.id);
+      } catch (err) {
+        setError("Could not initialize session");
+        setLoadingState("idle");
+        return;
+      }
+    }
 
     await sendChatMessageStream(
       {
         user_id: session.user_id,
-        session_id: session.session_id,
+        session_id: activeSessionId as string,
         input: trimmed,
       },
       (token) => {
@@ -172,11 +183,11 @@ function ChatPageContent() {
 
         // Fire-and-forget: persist messages to backend
         getToken().then((tok) => {
-          if (!tok || !currentSessionId) return;
-          saveMessage(currentSessionId, { role: "user", content: trimmed }, tok)
+          if (!tok || !activeSessionId) return;
+          saveMessage(activeSessionId, { role: "user", content: trimmed }, tok)
             .catch(() => {});
           saveMessage(
-            currentSessionId,
+            activeSessionId,
             { role: "assistant", content: finalContent, agent: finalAgent },
             tok
           ).catch(() => {});

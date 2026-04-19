@@ -25,7 +25,7 @@ export function resetSession(): void {
   }
 }
 
-const CURRENT_SESSION_KEY = "studyco_current_session";
+const CURRENT_SESSION_KEY = "athena_current_session";
 
 export function getOrCreateSessionId(): string {
   if (typeof window === "undefined") return crypto.randomUUID();
@@ -40,15 +40,17 @@ export function getOrCreateSessionId(): string {
 export function setCurrentSession(id: string): void {
   if (typeof window !== "undefined") {
     sessionStorage.setItem(CURRENT_SESSION_KEY, id);
+    // Clean up legacy key
+    sessionStorage.removeItem("studyco_current_session");
   }
 }
 
-export function resetCurrentSession(): string {
-  const id = crypto.randomUUID();
+/** Clears the current session so the next message starts a fresh one. */
+export function resetCurrentSession(): void {
   if (typeof window !== "undefined") {
-    sessionStorage.setItem(CURRENT_SESSION_KEY, id);
+    sessionStorage.removeItem(CURRENT_SESSION_KEY);
+    sessionStorage.removeItem("studyco_current_session");
   }
-  return id;
 }
 
 export interface Session {
