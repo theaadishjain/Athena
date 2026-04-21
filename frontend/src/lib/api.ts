@@ -5,6 +5,7 @@ import type {
   PlanRequest,
   MemoryQuery,
   Flashcard,
+  QuizQuestion,
   ChatMessage,
   ChatSessionMeta,
 } from "./types";
@@ -31,26 +32,6 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-// ─── Chat ─────────────────────────────────────────────────
-
-export async function sendChatMessage(
-  params: ChatRequest
-): Promise<UnifiedResponse> {
-  try {
-    const res = await fetch(`${BASE_URL}/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(params),
-    });
-    return handleResponse<UnifiedResponse>(res);
-  } catch (err) {
-    if (err instanceof ApiClientError) throw err;
-    throw new ApiClientError(
-      "Cannot reach the backend. Is it running on " + BASE_URL + "?"
-    );
-  }
-}
-
 export async function sendChatMessageStream(
   params: ChatRequest,
   onToken: (token: string) => void,
@@ -59,6 +40,7 @@ export async function sendChatMessageStream(
     memory_updated: boolean
     fallback: boolean
     flashcards?: Flashcard[]
+    quiz?: QuizQuestion[]
   }) => void,
   onError: (error: string) => void
 ): Promise<void> {
@@ -75,13 +57,15 @@ export async function sendChatMessageStream(
 
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
+    let buffer = ""
 
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
 
-      const text = decoder.decode(value)
-      const lines = text.split("\n")
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split("\n")
+      buffer = lines.pop() ?? ""
 
       for (const line of lines) {
         if (!line.startsWith("data: ")) continue
@@ -98,6 +82,7 @@ export async function sendChatMessageStream(
               memory_updated: parsed.memory_updated,
               fallback: parsed.fallback,
               flashcards: parsed.flashcards ?? undefined,
+              quiz: parsed.quiz ?? undefined,
             })
           }
         } catch {
@@ -270,5 +255,21 @@ export async function saveMessage(
   } catch {
     // Non-critical — don't break chat if save fails
     console.error("Failed to save message");
+  }
+}
+
+export async function deleteSession(
+  sessionId: string,
+  token: string
+): Promise<void> {
+  try {
+    const res = await fetch(`${BASE_URL}/sessions/${sessionId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    await handleResponse(res);
+  } catch (err) {
+    if (err instanceof ApiClientError) throw err;
+    throw new ApiClientError("Cannot reach backend");
   }
 }

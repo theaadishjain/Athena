@@ -3,12 +3,11 @@ from langgraph.graph import END, START, StateGraph
 from app.memory.provider import MemoryProvider
 from app.agents.planner.nodes import PlannerNodes
 from app.agents.shared.state import AcademicState
-from app.services.llm import LLMService
 
 
 class PlannerAgent:
-    def __init__(self, llm_service: LLMService, memory_provider: MemoryProvider) -> None:
-        self.nodes = PlannerNodes(llm_service, memory_provider)
+    def __init__(self, memory_provider: MemoryProvider) -> None:
+        self.nodes = PlannerNodes(memory_provider)
         self.graph = self._create_subgraph()
 
     def _create_subgraph(self):

@@ -3,12 +3,11 @@ from langgraph.graph import END, START, StateGraph
 from app.agents.advisor.nodes import AdvisorNodes
 from app.agents.shared.state import AcademicState
 from app.memory.provider import MemoryProvider
-from app.services.llm import LLMService
 
 
 class AdvisorAgent:
-    def __init__(self, llm_service: LLMService, memory_provider: MemoryProvider) -> None:
-        self.nodes = AdvisorNodes(llm_service, memory_provider)
+    def __init__(self, memory_provider: MemoryProvider) -> None:
+        self.nodes = AdvisorNodes(memory_provider)
         self.graph = self._create_subgraph()
 
     def _create_subgraph(self):

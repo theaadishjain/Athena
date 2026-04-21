@@ -3,17 +3,11 @@ from functools import lru_cache
 from app.agents.coordinator.workflow import CoordinatorWorkflow
 from app.memory.mempalace_store import MemPalaceStore
 from app.memory.provider import MemoryProvider
-from app.services.llm import LLMService
-
-
-@lru_cache
-def get_llm_service() -> LLMService:
-    return LLMService()
 
 
 @lru_cache
 def get_coordinator_workflow() -> CoordinatorWorkflow:
-    return CoordinatorWorkflow(get_llm_service(), get_memory_provider())
+    return CoordinatorWorkflow(get_memory_provider())
 
 
 @lru_cache

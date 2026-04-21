@@ -8,8 +8,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    google_api_key: str = Field(default="", alias="GOOGLE_API_KEY")
-    llm_model: str = Field(default="gemini-2.5-flash", alias="LLM_MODEL")
+    openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
+    llm_model: str = Field(default="google/gemini-2.5-flash", alias="LLM_MODEL")
     mempalace_path: str = Field(default="~/.mempalace/palace", alias="MEMPALACE_PATH")
     mempalace_collection: str = Field(default="studyco", alias="MEMPALACE_COLLECTION")
     memory_top_k: int = Field(default=3, alias="MEMORY_TOP_K")

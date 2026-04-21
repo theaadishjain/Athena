@@ -1,11 +1,11 @@
 from app.agents.shared.prompts import ADVISOR_PROMPT
 from app.agents.shared.state import AcademicState
 from app.memory.provider import MemoryProvider
-from app.services.llm import LLMService, get_llm
+from app.services.llm import get_llm
 
 
 class AdvisorNodes:
-    def __init__(self, llm_service: LLMService, memory_provider: MemoryProvider) -> None:
+    def __init__(self, memory_provider: MemoryProvider) -> None:
         self.llm = get_llm(max_tokens=1200)
         self.memory_provider = memory_provider
 

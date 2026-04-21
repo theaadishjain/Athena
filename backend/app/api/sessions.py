@@ -1,7 +1,7 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, delete
 from app.core.database import get_db, ChatSession, Message, SessionNote
 from app.core.auth import get_current_user
 
@@ -79,12 +79,19 @@ async def save_message(
     user_id: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Verify session belongs to this user
+    result = await db.execute(
+        select(ChatSession).where(
+            ChatSession.id == session_id,
+            ChatSession.user_id == user_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     # Auto-title session from first user message
     if payload.get("role") == "user":
-        result = await db.execute(
-            select(ChatSession).where(ChatSession.id == session_id)
-        )
-        session = result.scalar_one_or_none()
         if session and session.title == "New Chat":
             session.title = payload["content"][:40]
             await db.commit()
@@ -108,6 +115,17 @@ async def save_note(
     user_id: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Verify session belongs to this user
+    result = await db.execute(
+        select(ChatSession).where(
+            ChatSession.id == session_id,
+            ChatSession.user_id == user_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     note = SessionNote(
         session_id=session_id,
         user_id=user_id,
@@ -125,6 +143,17 @@ async def get_notes(
     user_id: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Verify session belongs to this user
+    result = await db.execute(
+        select(ChatSession).where(
+            ChatSession.id == session_id,
+            ChatSession.user_id == user_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     result = await db.execute(
         select(SessionNote)
         .where(SessionNote.session_id == session_id)
@@ -135,3 +164,35 @@ async def get_notes(
         {"filename": n.filename, "summary": n.summary}
         for n in notes
     ]
+
+
+@router.delete("/{session_id}")
+async def delete_session(
+    session_id: str,
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    print(f"[DELETE] session_id={session_id} user_id={user_id}")
+    # Verify session belongs to this user
+    result = await db.execute(
+        select(ChatSession).where(
+            ChatSession.id == session_id,
+            ChatSession.user_id == user_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Delete messages first (foreign key safety)
+    await db.execute(
+        delete(Message).where(Message.session_id == session_id)
+    )
+    # Delete notes
+    await db.execute(
+        delete(SessionNote).where(SessionNote.session_id == session_id)
+    )
+    # Delete session
+    await db.delete(session)
+    await db.commit()
+    return {"status": "deleted"}

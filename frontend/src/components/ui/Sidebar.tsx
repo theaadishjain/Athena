@@ -5,8 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { UserButton, useUser, useAuth } from "@clerk/nextjs";
 import { useEffect, useState, useCallback } from "react";
 import type { ChatSessionMeta } from "@/lib/types";
-import { listSessions } from "@/lib/api";
-import { setCurrentSession } from "@/lib/session";
+import { listSessions, deleteSession } from "@/lib/api";
+import { setCurrentSession, resetCurrentSession } from "@/lib/session";
 
 const NAV_ITEMS = [
   {
@@ -91,19 +91,55 @@ export default function Sidebar() {
     sessionStorage.removeItem("athena_current_session");
     sessionStorage.removeItem("studyco_current_session");
     setActiveSessionId(null);
-    router.push("/chat");
-    // If already on chat, the key/mount check in chat/page.tsx will handle the reset
+    // Use unique param so navigation always fires even when already on /chat
+    router.push("/chat?new=" + Date.now());
   }, [router]);
 
   // Click on a past session
   const handleSessionClick = useCallback(
     (session: ChatSessionMeta) => {
+      console.log("SESSION CLICKED", session.id);
       setCurrentSession(session.id);
       setActiveSessionId(session.id);
-      router.push("/chat");
+      // Use ?sid= so chat page re-runs its mount effect and loads messages
+      router.push("/chat?sid=" + session.id);
     },
     [router]
   );
+
+  // Delete a session
+  const handleDeleteSession = async (
+    e: React.MouseEvent,
+    sessionId: string
+  ) => {
+    e.stopPropagation(); // prevent row click firing
+    e.preventDefault();
+
+    try {
+      const token = await getToken();
+      if (!token) return;
+
+      console.log("[DELETE] clicked session:", sessionId);
+      console.log("[DELETE] token:", token ? "present" : "missing");
+
+      await deleteSession(sessionId, token);
+
+      console.log("[DELETE] API success, updating state");
+
+      // Remove from local state immediately
+      setSessions(prev => prev.filter(s => s.id !== sessionId));
+
+      // If deleted session was the active one
+      const currentId = sessionStorage.getItem("athena_current_session");
+      if (currentId === sessionId) {
+        sessionStorage.removeItem("athena_current_session");
+        router.push("/chat?new=" + Date.now());
+      }
+    } catch (err) {
+      console.error("[DELETE] failed:", err);
+    }
+  };
+
 
   return (
     <aside className="sticky top-0 h-screen w-60 shrink-0 border-r border-border bg-surface flex flex-col z-40 hidden md:flex">
@@ -173,17 +209,29 @@ export default function Sidebar() {
               <button
                 key={s.id}
                 onClick={() => handleSessionClick(s)}
-                className={`w-full text-left flex flex-col rounded-lg px-2.5 py-2 transition-all ${
+                className={`group w-full text-left flex items-center rounded-lg px-2.5 py-2 transition-all ${
                   isActive
                     ? "bg-primary/8 border-l-2 border-primary pl-2"
                     : "text-muted hover:bg-white/[0.03] hover:text-foreground border-l-2 border-transparent"
                 }`}
               >
-                <span className={`text-[12px] font-medium truncate ${isActive ? "text-primary" : "text-foreground/80"}`}>
-                  {s.title.slice(0, 30)}{s.title.length > 30 ? "…" : ""}
+                <span className="flex-1 min-w-0 flex flex-col">
+                  <span className={`text-[12px] font-medium truncate ${isActive ? "text-primary" : "text-foreground/80"}`}>
+                    {s.title.slice(0, 28)}{s.title.length > 28 ? "…" : ""}
+                  </span>
+                  <span className="text-[10px] text-muted/50 mt-0.5">
+                    {relativeTime(s.created_at)}
+                  </span>
                 </span>
-                <span className="text-[10px] text-muted/50 mt-0.5">
-                  {relativeTime(s.created_at)}
+                <span
+                  onClick={(e) => handleDeleteSession(e, s.id)}
+                  role="button"
+                  aria-label="Delete session"
+                  className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 rounded text-muted hover:text-red-400 transition-all shrink-0 cursor-pointer"
+                >
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </span>
               </button>
             );

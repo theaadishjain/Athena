@@ -14,7 +14,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 def build_state(
     payload: ChatRequest,
-    intent: Literal["planner", "summarizer", "advisor", "coordinator", "flashcard"],
+    intent: Literal["planner", "summarizer", "advisor", "coordinator", "flashcard", "quiz"],
 ) -> AcademicState:
     return AcademicState(
         user_id=payload.user_id,
@@ -26,6 +26,7 @@ def build_state(
         memory_written=False,
         error=None,
         flashcards=None,
+        quiz=None,
     )
 
 
@@ -56,7 +57,8 @@ async def chat(payload: ChatRequest) -> StreamingResponse:
                 "agent": agent,
                 "memory_updated": memory_updated,
                 "fallback": fallback,
-                "flashcards": result.get("flashcards")
+                "flashcards": result.get("flashcards"),
+                "quiz": result.get("quiz")
             })
             yield f"data: {final}\n\n"
 
@@ -70,6 +72,7 @@ async def chat(payload: ChatRequest) -> StreamingResponse:
                 "memory_updated": False,
                 "fallback": True,
                 "flashcards": None,
+                "quiz": None,
                 "error": str(exc)
             })
             yield f"data: {error_final}\n\n"

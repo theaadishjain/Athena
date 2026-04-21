@@ -1,26 +1,15 @@
-from langchain_google_genai import ChatGoogleGenerativeAI
-
+from langchain_openai import ChatOpenAI
 from app.core.config import get_settings
 
-
-def get_llm(max_tokens: int = 500) -> ChatGoogleGenerativeAI:
+def get_llm(max_tokens: int = 500) -> ChatOpenAI:
     settings = get_settings()
-    return ChatGoogleGenerativeAI(
+    return ChatOpenAI(
         model=settings.llm_model,
-        google_api_key=settings.google_api_key,
+        api_key=settings.openrouter_api_key,
+        base_url="https://openrouter.ai/api/v1",
         max_tokens=max_tokens,
-        temperature=0.7
+        default_headers={
+            "HTTP-Referer": "http://localhost:3000",
+            "X-Title": "Athena AI"
+        }
     )
-
-
-class LLMService:
-    def __init__(self) -> None:
-        settings = get_settings()
-        self._llm = ChatGoogleGenerativeAI(
-            model=settings.llm_model,
-            google_api_key=settings.google_api_key,
-        )
-
-    async def generate(self, prompt: str) -> str:
-        response = await self._llm.ainvoke(prompt)
-        return response.content if hasattr(response, "content") else str(response)

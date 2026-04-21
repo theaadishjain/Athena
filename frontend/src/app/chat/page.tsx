@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState, useCallback, useRef } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import DashboardLayout from "@/components/ui/DashboardLayout";
 import AgentBadge from "@/components/ui/AgentBadge";
@@ -19,8 +19,6 @@ import { useSession, setCurrentSession, resetCurrentSession } from "@/lib/sessio
 import { renderWithLatex } from "@/lib/renderMarkdown";
 
 export default function ChatPage() {
-  const [chatKey, setChatKey] = useState(0);
-
   return (
     <Suspense
       fallback={
@@ -31,13 +29,14 @@ export default function ChatPage() {
         </DashboardLayout>
       }
     >
-      <ChatPageContent key={chatKey} onNewChat={() => setChatKey(prev => prev + 1)} />
+      <ChatPageContent />
     </Suspense>
   );
 }
 
-function ChatPageContent({ onNewChat }: { onNewChat: () => void }) {
+function ChatPageContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loadingState, setLoadingState] = useState<LoadingState>("idle");
@@ -45,44 +44,75 @@ function ChatPageContent({ onNewChat }: { onNewChat: () => void }) {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const hasHandledQuery = useRef(false);
+  // Ref to hold a pending auto-send query (avoids stale closure)
+  const pendingQueryRef = useRef<string | null>(null);
   const session = useSession();
   const { getToken } = useAuth();
 
-  // ── On mount: create/load session ───────────────────────
+  // ── On mount / URL change: load session ─────────────────
   useEffect(() => {
     let cancelled = false;
+
+    // Check URL params
+    const sidParam = searchParams.get("sid");
+    const newParam = searchParams.get("new");
+
+    console.log("[MOUNT] searchParams:", searchParams.toString());
+    console.log("[MOUNT] sid param:", sidParam);
+    console.log("[MOUNT] new param:", newParam);
+
+    // ?new= means New Chat was clicked — clear everything, do not load
+    if (newParam) {
+      if (!cancelled) {
+        setMessages([]);
+        setLoadingState("idle");
+        setError(null);
+        setCurrentSessionId(null);
+        resetCurrentSession();
+      }
+      return;
+    }
+
+    // Determine which session to load
+    const storedId = sessionStorage.getItem("athena_current_session");
+    const targetId = sidParam || storedId;
+
+    // Check for pending query from dashboard handoff
+    const pending = sessionStorage.getItem("athena_pending_query");
+    if (pending) {
+      sessionStorage.removeItem("athena_pending_query");
+      pendingQueryRef.current = pending;
+    }
 
     async function initSession() {
       try {
         const token = await getToken();
-        if (!token) return;
+        if (!token || cancelled) return;
 
-        // Read canonical session key only
-        const existingId = sessionStorage.getItem("athena_current_session");
-
-        if (existingId) {
-          setCurrentSessionId(existingId);
+        if (targetId) {
+          // Persist the chosen session to storage
+          setCurrentSession(targetId);
+          setCurrentSessionId(targetId);
           try {
-            const msgs = await getSessionMessages(existingId, token);
+            const msgs = await getSessionMessages(targetId, token);
             if (!cancelled) setMessages(msgs);
           } catch {
-            // Session expired or deleted — start fresh
-            if (!cancelled) setCurrentSessionId(null);
+            // Session expired or deleted — fall through to fresh start
+            if (!cancelled) {
+              resetCurrentSession();
+              setCurrentSessionId(null);
+            }
           }
         } else {
-          // No session yet — lazy creation on first message
+          // No session — lazy creation on first message
           if (!cancelled) setCurrentSessionId(null);
         }
 
-        // Check for pending query from dashboard handoff
-        if (!cancelled) {
-          const pending = sessionStorage.getItem("athena_pending_query");
-          if (pending) {
-            sessionStorage.removeItem("athena_pending_query");
-            // Small delay so the component is fully mounted
-            setTimeout(() => handleSend(pending), 50);
-          }
+        // Fire pending query after session is resolved
+        if (!cancelled && pendingQueryRef.current) {
+          const q = pendingQueryRef.current;
+          pendingQueryRef.current = null;
+          setTimeout(() => handleSendRef.current?.(q), 80);
         }
       } catch {
         if (!cancelled) setError("Connection failed");
@@ -91,8 +121,9 @@ function ChatPageContent({ onNewChat }: { onNewChat: () => void }) {
 
     initSession();
     return () => { cancelled = true; };
+  // Re-run when searchParams changes (sidebar ?sid= or New Chat ?new=)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -103,10 +134,17 @@ function ChatPageContent({ onNewChat }: { onNewChat: () => void }) {
   }, []);
 
   // ── New Chat ─────────────────────────────────────────────
-  const handleNewChat = useCallback(async () => {
+  const handleNewChat = useCallback(() => {
+    console.log("[NEW CHAT] clicked");
     resetCurrentSession();
-    onNewChat();
-  }, [onNewChat]);
+    setMessages([]);
+    setLoadingState("idle");
+    setError(null);
+    setCurrentSessionId(null);
+    const newUrl = "/chat?new=" + Date.now();
+    console.log("[NEW CHAT] pushing url:", newUrl);
+    router.push(newUrl);
+  }, [router]);
 
   // ── Send message ─────────────────────────────────────────
   const handleSend = useCallback(async (overrideInput?: string) => {
@@ -119,7 +157,6 @@ function ChatPageContent({ onNewChat }: { onNewChat: () => void }) {
       content: trimmed,
     };
 
-    // Add empty assistant message immediately
     const assistantMessage: ChatMessage = {
       id: crypto.randomUUID(),
       role: "assistant",
@@ -135,7 +172,7 @@ function ChatPageContent({ onNewChat }: { onNewChat: () => void }) {
     let finalAgent = "";
     let activeSessionId = currentSessionId;
 
-    // Create session if it doesn't exist (Bug 2 fix)
+    // Lazy session creation on first message
     if (!activeSessionId) {
       try {
         const token = await getToken();
@@ -144,7 +181,7 @@ function ChatPageContent({ onNewChat }: { onNewChat: () => void }) {
         activeSessionId = newSession.id;
         setCurrentSession(newSession.id);
         setCurrentSessionId(newSession.id);
-      } catch (err) {
+      } catch {
         setError("Could not initialize session");
         setLoadingState("idle");
         return;
@@ -200,15 +237,9 @@ function ChatPageContent({ onNewChat }: { onNewChat: () => void }) {
     );
   }, [input, loadingState, session, currentSessionId, getToken]);
 
-  useEffect(() => {
-    const q = searchParams.get("q");
-    if (q && !hasHandledQuery.current) {
-      hasHandledQuery.current = true;
-      setTimeout(() => {
-        handleSend(q);
-      }, 0);
-    }
-  }, [searchParams, handleSend]);
+  // Keep a stable ref to handleSend for use in the mount effect pending query
+  const handleSendRef = useRef(handleSend);
+  useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

@@ -1,10 +1,9 @@
-// Next.js 16 middleware deprecation warning is a known
-// Clerk ecosystem issue. No fix available yet.
-// See: https://nextjs.org/docs/messages/middleware-to-proxy
+// Next.js 16: `middleware` has been renamed to `proxy`.
+// This file preserves the existing Clerk protection logic under the new convention.
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 const isPublicRoute = createRouteMatcher([
-  "/",            // landing page — public
+  "/", // landing page - public
   "/sign-in(.*)",
   "/sign-up(.*)",
 ]);
@@ -21,3 +20,4 @@ export const config = {
     "/(api|trpc)(.*)",
   ],
 };
+

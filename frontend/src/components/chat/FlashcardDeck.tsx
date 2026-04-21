@@ -18,10 +18,8 @@ export default function FlashcardDeck({ flashcards }: FlashcardDeckProps) {
 
   const handleNext = (e: React.MouseEvent) => {
     e.stopPropagation();
+    setCurrentIndex((prev) => Math.min(prev + 1, flashcards.length));
     setIsFlipped(false);
-    setTimeout(() => {
-      setCurrentIndex((prev) => prev + 1);
-    }, 150);
   };
 
   const handlePrev = (e: React.MouseEvent) => {

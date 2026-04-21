@@ -1,7 +1,7 @@
 from typing import List, Literal, Optional, TypedDict
 
 
-IntentType = Literal["planner", "summarizer", "advisor", "coordinator", "flashcard"]
+IntentType = Literal["planner", "summarizer", "advisor", "coordinator", "flashcard", "quiz"]
 
 
 class AcademicState(TypedDict):
@@ -14,3 +14,5 @@ class AcademicState(TypedDict):
     memory_written: bool
     error: Optional[str]
     flashcards: Optional[List[dict]]
+    quiz: Optional[List[dict]]
+

@@ -5,9 +5,16 @@ export interface Flashcard {
   answer: string;
 }
 
+export interface QuizQuestion {
+  question: string;
+  options: string[];
+  correct: string;
+  explanation: string;
+}
+
 export interface UnifiedResponse {
   status: "success" | "error";
-  agent: "planner" | "summarizer" | "advisor" | "coordinator" | "flashcard";
+  agent: "planner" | "summarizer" | "advisor" | "coordinator" | "flashcard" | "quiz";
   response: string;
   memory_updated: boolean;
   fallback: boolean;
