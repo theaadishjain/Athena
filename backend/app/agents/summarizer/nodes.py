@@ -6,7 +6,7 @@ from app.services.llm import get_llm
 
 class SummarizerNodes:
     def __init__(self, memory_provider: MemoryProvider) -> None:
-        self.llm = get_llm(max_tokens=800)
+        self.llm = get_llm(max_tokens=1500)
         self.memory_provider = memory_provider
 
     async def summarize(self, state: AcademicState) -> AcademicState:

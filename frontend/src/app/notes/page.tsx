@@ -31,8 +31,21 @@ export default function NotesPage() {
 
   // ── Export handlers ─────────────────────────────────────
   const handleExportPDF = useCallback(() => {
-    window.print();
-  }, []);
+    if (!summary) return;
+
+    const printArea = document.getElementById("summary-print-area");
+    if (!printArea) return;
+
+    const contentDiv = document.getElementById("summary-print-content");
+    if (!contentDiv) return;
+
+    contentDiv.innerHTML = renderWithLatex(summary.response);
+
+    // Give browser time to render injected HTML
+    setTimeout(() => {
+      window.print();
+    }, 300);
+  }, [summary]);
 
   const exportSummaryAsMarkdown = useCallback(() => {
     if (!summary || !file) return;
@@ -109,7 +122,7 @@ export default function NotesPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-8 lg:p-10 max-w-2xl">
+      <div className="px-8 pt-10 pb-16 max-w-5xl w-full">
         {/* Header */}
         <div className="mb-8 animate-fade-in">
           <h1 className="text-xl font-semibold tracking-tight mb-1">Notes</h1>
@@ -288,12 +301,23 @@ export default function NotesPage() {
 
       {/* Hidden print area — shown only during window.print() */}
       {summary && (
-        <div id="summary-print-area" className="hidden">
-          <h1>Athena — Document Summary</h1>
-          <p>File: {file?.name}</p>
-          <p>Date: {new Date().toLocaleDateString()}</p>
-          <hr />
-          <div style={{ whiteSpace: "pre-wrap" }}>{summary.response}</div>
+        <div id="summary-print-area" style={{ display: "none" }}>
+          <div style={{ padding: "2rem" }}>
+            <h1 style={{ fontSize: "20pt", marginBottom: "0.5rem" }}>
+              Athena — Document Summary
+            </h1>
+            <p style={{ fontSize: "11pt", color: "#666", marginBottom: "0.25rem" }}>
+              File: {file?.name}
+            </p>
+            <p style={{ fontSize: "11pt", color: "#666", marginBottom: "1rem" }}>
+              Date: {new Date().toLocaleDateString()}
+            </p>
+            <hr style={{ marginBottom: "1rem" }} />
+            <div
+              id="summary-print-content"
+              style={{ fontSize: "11pt", lineHeight: "1.6", color: "#000" }}
+            />
+          </div>
         </div>
       )}
     </DashboardLayout>

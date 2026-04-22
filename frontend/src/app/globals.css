@@ -309,43 +309,60 @@ body {
 /* ─── Print styles (PDF export from Notes page) ──────────── */
 
 @media print {
-  body > * {
-    display: none !important;
-  }
-
-  #summary-print-area {
-    display: block !important;
-    font-family: Georgia, serif;
-    font-size: 12pt;
-    line-height: 1.6;
-    padding: 2rem;
-    color: #000;
-    background: #fff;
-    max-width: 100%;
-  }
-
-  #summary-print-area h1 {
-    font-size: 18pt;
-    font-weight: bold;
-    margin-bottom: 0.5rem;
-    color: #000;
-  }
-
-  #summary-print-area p {
-    font-size: 10pt;
-    color: #444;
-    margin: 0.2rem 0;
-  }
-
-  #summary-print-area hr {
-    border: none;
-    border-top: 1px solid #ccc;
-    margin: 1rem 0;
-  }
-
-  #summary-print-area div {
-    font-size: 11pt;
-    color: #111;
-    margin-top: 1rem;
-  }
+    body * { visibility: hidden; }
+    #summary-print-area,
+    #summary-print-area * { 
+        visibility: visible; 
+    }
+    #summary-print-area {
+        display: block !important;
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        background: white;
+        padding: 2rem;
+    }
+    #summary-print-area h1 { 
+        font-size: 16pt; 
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: #000;
+    }
+    #summary-print-area h2 { 
+        font-size: 14pt; 
+        font-weight: 600;
+        margin: 0.75rem 0 0.25rem;
+        color: #000;
+    }
+    #summary-print-area h3 { 
+        font-size: 12pt; 
+        font-weight: 600;
+        margin: 0.5rem 0 0.2rem;
+        color: #000;
+    }
+    #summary-print-area p {
+        font-size: 11pt;
+        margin: 0 0 0.5rem;
+        color: #000;
+    }
+    #summary-print-area ul,
+    #summary-print-area ol {
+        padding-left: 1.5rem;
+        margin: 0.5rem 0;
+    }
+    #summary-print-area li {
+        font-size: 11pt;
+        margin: 0.25rem 0;
+        color: #000;
+    }
+    #summary-print-area strong {
+        font-weight: 600;
+    }
+    #summary-print-area code {
+        font-family: monospace;
+        font-size: 10pt;
+        background: #f0f0f0;
+        padding: 1px 4px;
+    }
 }
