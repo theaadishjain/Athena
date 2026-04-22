@@ -79,12 +79,26 @@ export default function Sidebar() {
     }
   }, [getToken]);
 
+  const cleanupEmpty = useCallback(async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/sessions/empty`,
+        { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }
+      );
+      // Re-fetch so stale empty sessions disappear from sidebar
+      await fetchSessions();
+    } catch { /* silent fail */ }
+  }, [getToken, fetchSessions]);
+
   useEffect(() => {
     fetchSessions();
+    cleanupEmpty();
     // Refresh every 30s while sidebar is visible
     const interval = setInterval(fetchSessions, 30_000);
     return () => clearInterval(interval);
-  }, [fetchSessions]);
+  }, [fetchSessions, cleanupEmpty]);
 
   // New Chat
   const handleNewChat = useCallback(() => {

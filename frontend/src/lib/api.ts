@@ -285,3 +285,64 @@ export async function deleteSession(
     throw new ApiClientError("Cannot reach backend");
   }
 }
+
+export async function saveNote(
+  sessionId: string,
+  filename: string,
+  summary: string,
+  token: string
+): Promise<void> {
+  try {
+    const res = await fetch(`${BASE_URL}/sessions/${sessionId}/notes`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ filename, summary }),
+    });
+    await handleResponse(res);
+  } catch {
+    // Non-critical — don't break UI if save fails
+    console.error("Failed to save note");
+  }
+}
+
+// ─── Memory Profile ───────────────────────────────────────
+
+export async function getMemoryProfile(token: string): Promise<{
+  preferences: string[];
+  weak_subjects: string[];
+  recent_topics: string[];
+}> {
+  try {
+    const res = await fetch(`${BASE_URL}/memory/profile`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return handleResponse(res);
+  } catch (err) {
+    if (err instanceof ApiClientError) throw err;
+    throw new ApiClientError("Cannot reach backend");
+  }
+}
+
+// ─── Past Summaries ───────────────────────────────────────
+
+export interface PastSummary {
+  id: number;
+  filename: string;
+  summary: string;
+  created_at: string;
+}
+
+export async function getAllNotes(token: string): Promise<PastSummary[]> {
+  try {
+    const res = await fetch(`${BASE_URL}/sessions/notes/all`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return handleResponse<PastSummary[]>(res);
+  } catch (err) {
+    if (err instanceof ApiClientError) throw err;
+    throw new ApiClientError("Cannot reach backend");
+  }
+}

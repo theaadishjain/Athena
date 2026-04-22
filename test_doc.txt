@@ -1,0 +1,5 @@
+Graph Traversal Basics:
+Graph traversal means visiting every vertex and edge exactly once in a well-defined order.
+1. BFS (Breadth First Search): Explores neighbors first before moving deeper. Uses a Queue.
+2. DFS (Depth First Search): Explores as deep as possible before backtracking. Uses a Stack or recursion.
+These algorithms are very common in Data Structures exams.

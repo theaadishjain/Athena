@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import DashboardLayout from "@/components/ui/DashboardLayout";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
 import ErrorBanner from "@/components/ui/ErrorBanner";
@@ -8,7 +8,7 @@ import AgentBadge from "@/components/ui/AgentBadge";
 import type { UnifiedResponse, LoadingState } from "@/lib/types";
 import { renderWithLatex } from "@/lib/renderMarkdown";
 import { useAuth } from "@clerk/nextjs";
-import { summarizeFile } from "@/lib/api";
+import { summarizeFile, getAllNotes, saveNote, type PastSummary } from "@/lib/api";
 import { useSession, getOrCreateSessionId } from "@/lib/session";
 
 const ACCEPTED_TYPES = ["application/pdf", "text/plain", "text/markdown"];
@@ -28,6 +28,28 @@ export default function NotesPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const session = useSession();
   const { getToken } = useAuth();
+  const [pastSummaries, setPastSummaries] = useState<PastSummary[]>([]);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [summariesLoading, setSummariesLoading] = useState(false);
+
+  const fetchPastSummaries = useCallback(async () => {
+    try {
+      const tok = await getToken();
+      if (!tok) return;
+      setSummariesLoading(true);
+      const data = await getAllNotes(tok);
+      setPastSummaries(data);
+    } catch {
+      // silent fail
+    } finally {
+      setSummariesLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    fetchPastSummaries();
+  }, [fetchPastSummaries]);
 
   // ── Export handlers ─────────────────────────────────────
   const handleExportPDF = useCallback(() => {
@@ -106,12 +128,17 @@ export default function NotesPage() {
       const res = await summarizeFile(file, activeSessionId, token);
       setSummary(res);
       setLoadingState("success");
+
+      // Persist to DB (fire and forget) then refresh the list
+      saveNote(activeSessionId, file.name, res.response, token)
+        .catch(() => {})
+        .finally(() => fetchPastSummaries());
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to summarize file";
       setError(message);
       setLoadingState("error");
     }
-  }, [file, loadingState, session, getToken]);
+  }, [file, loadingState, getToken, fetchPastSummaries]);
 
   const handleReset = useCallback(() => {
     setFile(null);
@@ -320,6 +347,56 @@ export default function NotesPage() {
           </div>
         </div>
       )}
+
+      {/* Past Summaries section */}
+      <div className="px-8 pb-16 max-w-5xl w-full">
+        <div className="flex items-center gap-2.5 mb-3">
+          <div className="h-px flex-1 max-w-[40px] bg-border-light" />
+          <span className="text-[10px] font-medium text-muted/60 uppercase tracking-[0.15em] select-none">
+            Past summaries
+          </span>
+        </div>
+
+        {summariesLoading ? (
+          <p className="text-[13px] text-muted/50 py-4">Loading summaries…</p>
+        ) : pastSummaries.length === 0 ? (
+          <p className="text-[13px] text-muted/50 py-4">No past summaries yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {pastSummaries.map((n) => (
+              <div key={n.id} className="surface-card overflow-hidden">
+                <button
+                  onClick={() => setExpandedId(expandedId === n.id ? null : n.id)}
+                  className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/[0.02] transition-all"
+                >
+                  <div className="flex flex-col gap-0.5 min-w-0">
+                    <span className="text-[13px] font-medium truncate">{n.filename}</span>
+                    <span className="text-[11px] text-muted/50">
+                      {new Date(n.created_at).toLocaleDateString(undefined, {
+                        month: "short", day: "numeric", year: "numeric",
+                      })}
+                    </span>
+                  </div>
+                  <svg
+                    className={`h-3.5 w-3.5 text-muted shrink-0 ml-3 transition-transform ${expandedId === n.id ? "rotate-180" : ""}`}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                  </svg>
+                </button>
+                {expandedId === n.id && (
+                  <div className="px-4 pb-4 border-t border-border-light">
+                    <div
+                      className="prose-chat prose-invert pt-4"
+                      dangerouslySetInnerHTML={{ __html: renderWithLatex(n.summary) }}
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </DashboardLayout>
   );
 }

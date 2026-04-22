@@ -1,3 +1,5 @@
+import re
+
 from app.agents.shared.prompts import ADVISOR_PROMPT
 from app.agents.shared.state import AcademicState
 from app.memory.provider import MemoryProvider
@@ -25,9 +27,24 @@ class AdvisorNodes:
         memory_text = "\n".join(state["memory_context"]) if state["memory_context"] else "No memory found."
         prompt = ADVISOR_PROMPT.format(user_input=state["input"], memory_context=memory_text)
         response = await self.llm.ainvoke(prompt)
-        state["agent_output"] = response.content if hasattr(response, "content") else str(response)
+        response_text = response.content if hasattr(response, "content") else str(response)
+        # Strip internal mode labels that leak into user output
+        response_text = re.sub(
+            r'^(BRIEF|DETAILED)\s+mode\s*:\s*',
+            '',
+            response_text,
+            flags=re.IGNORECASE
+        ).strip()
+        state["agent_output"] = response_text
         # Step 4: advisor-owned memory writes only
-        self.memory_provider.write_memory(state["user_id"], "past_chats", state["agent_output"])
-        self.memory_provider.write_memory(state["user_id"], "preferences", state["input"])
+        self.memory_provider.write_memory(
+            state["user_id"], 
+            "past_chats", 
+            f"Topic: {state['input'][:100]}"
+        )
+        
+        pref_keywords = ["prefer", "like", "style", "morning", "evening", "hours", "method"]
+        if any(word in state["input"].lower() for word in pref_keywords):
+            self.memory_provider.write_memory(state["user_id"], "preferences", state["input"])
         state["memory_written"] = True
         return state

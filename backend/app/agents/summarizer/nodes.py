@@ -24,7 +24,10 @@ class SummarizerNodes:
         response = await self.llm.ainvoke(prompt)
         state["agent_output"] = response.content if hasattr(response, "content") else str(response)
         # Step 4: summarizer-owned memory writes only
-        self.memory_provider.write_memory(state["user_id"], "note_summaries", state["agent_output"])
-        self.memory_provider.write_memory(state["user_id"], "weak_subjects", state["input"])
+        self.memory_provider.write_memory(state["user_id"], "note_summaries", state["agent_output"][:200])
+        
+        output_lower = state["agent_output"].lower()
+        if any(word in output_lower for word in ["difficulty", "challenge", "complex topic"]):
+            self.memory_provider.write_memory(state["user_id"], "weak_subjects", state["input"])
         state["memory_written"] = True
         return state

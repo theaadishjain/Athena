@@ -41,20 +41,20 @@ export default function ToolCard({
   const inner = (
     <div
       ref={cardRef}
-      className={`card-glow surface-card p-5 relative overflow-hidden flex items-start gap-4 transition-all duration-300 ${
+      className={`card-glow surface-card p-6 relative overflow-hidden flex items-start gap-4 transition-all duration-300 ${
         comingSoon
           ? "opacity-50 cursor-default select-none"
           : "hover:border-border-light hover:-translate-y-0.5 hover:shadow-lg cursor-pointer"
       }`}
     >
       <div
-        className={`shrink-0 rounded-xl p-2.5 ${
+        className={`shrink-0 rounded-xl p-3 ${
           comingSoon
             ? "bg-white/[0.02] text-muted"
             : "bg-primary/10 text-primary"
         }`}
       >
-        <div className="w-5 h-5 flex items-center justify-center">{icon}</div>
+        <div className="w-6 h-6 flex items-center justify-center">{icon}</div>
       </div>
 
       <div className="flex-1 min-w-0 pt-0.5">

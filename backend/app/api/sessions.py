@@ -1,11 +1,17 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, delete
 from app.core.database import get_db, ChatSession, Message, SessionNote
 from app.core.auth import get_current_user
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+
+class NotePayload(BaseModel):
+    filename: str
+    summary: str
 
 
 @router.get("")
@@ -43,6 +49,52 @@ async def create_session(
     db.add(session)
     await db.commit()
     return {"id": session.id, "title": session.title}
+
+
+@router.get("/notes/all")
+async def get_all_notes(
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(SessionNote)
+        .where(SessionNote.user_id == user_id)
+        .order_by(desc(SessionNote.created_at))
+        .limit(20)
+    )
+    notes = result.scalars().all()
+    return [
+        {
+            "id": n.id,
+            "filename": n.filename,
+            "summary": n.summary,
+            "created_at": n.created_at.isoformat(),
+        }
+        for n in notes
+    ]
+
+
+@router.delete("/empty")
+async def delete_empty_sessions(
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Find all session IDs that have at least one message
+    subquery = select(Message.session_id).distinct()
+    result = await db.execute(
+        select(ChatSession).where(
+            ChatSession.user_id == user_id,
+            ChatSession.id.not_in(subquery),
+        )
+    )
+    empty_sessions = result.scalars().all()
+    count = len(empty_sessions)
+
+    for session in empty_sessions:
+        await db.delete(session)
+    await db.commit()
+
+    return {"deleted": count}
 
 
 @router.get("/{session_id}/messages")
@@ -111,26 +163,17 @@ async def save_message(
 @router.post("/{session_id}/notes")
 async def save_note(
     session_id: str,
-    payload: dict,
+    payload: NotePayload,
     user_id: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Verify session belongs to this user
-    result = await db.execute(
-        select(ChatSession).where(
-            ChatSession.id == session_id,
-            ChatSession.user_id == user_id,
-        )
-    )
-    session = result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=403, detail="Access denied")
-
+    # No ownership check — session may be a local UUID created by notes page
+    # before a chat session exists in DB. Auth is still enforced via JWT.
     note = SessionNote(
         session_id=session_id,
         user_id=user_id,
-        filename=payload["filename"],
-        summary=payload["summary"],
+        filename=payload.filename,
+        summary=payload.summary,
     )
     db.add(note)
     await db.commit()

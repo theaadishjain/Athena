@@ -29,7 +29,10 @@ class PlannerNodes:
         response = await self.llm.ainvoke(prompt)
         state["agent_output"] = response.content if hasattr(response, "content") else str(response)
         # Step 4: planner-owned memory writes only
-        self.memory_provider.write_memory(state["user_id"], "past_chats", state["agent_output"])
-        self.memory_provider.write_memory(state["user_id"], "preferences", state["input"])
+        self.memory_provider.write_memory(state["user_id"], "past_chats", f"Planned study for: {state['input'][:80]}")
+        
+        input_lower = state["input"].lower()
+        if "subject" in input_lower or "topic" in input_lower:
+            self.memory_provider.write_memory(state["user_id"], "preferences", state["input"])
         state["memory_written"] = True
         return state

@@ -7,6 +7,38 @@ from app.schemas.memory import MemoryReadRequest, MemoryReadResponse, MemoryWrit
 router = APIRouter(prefix="/memory", tags=["memory"])
 
 
+@router.get("/profile")
+async def get_memory_profile(
+    user_id: str = Depends(get_current_user),
+) -> dict:
+    provider = get_memory_provider()
+
+    preferences = provider.read_memory(
+        user_id=user_id,
+        memory_type="preferences",
+        query="user preferences",
+        k=3,
+    )
+    weak_subjects = provider.read_memory(
+        user_id=user_id,
+        memory_type="weak_subjects",
+        query="weak subjects",
+        k=3,
+    )
+    past_topics = provider.read_memory(
+        user_id=user_id,
+        memory_type="past_chats",
+        query="topics studied",
+        k=3,
+    )
+
+    return {
+        "preferences": preferences,
+        "weak_subjects": weak_subjects,
+        "recent_topics": past_topics,
+    }
+
+
 @router.get("", response_model=MemoryReadResponse)
 async def memory_read(
     payload: MemoryReadRequest = Depends(),

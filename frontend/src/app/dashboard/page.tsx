@@ -13,6 +13,7 @@ import {
   listSessions,
   getSessionMessages,
   getStudyPlan,
+  getMemoryProfile,
 } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { renderWithLatex } from "@/lib/renderMarkdown";
@@ -56,6 +57,13 @@ export default function DashboardPage() {
   const [recentSession, setRecentSession] = useState<ChatSessionMeta | null>(null);
   const [summaryState, setSummaryState] = useState<LoadingState>("idle");
   const [summaryError, setSummaryError] = useState<string | null>(null);
+
+  // ── Memory Profile ──────────────────────────────────────
+  const [memoryProfile, setMemoryProfile] = useState<{
+    preferences: string[];
+    weak_subjects: string[];
+    recent_topics: string[];
+  } | null>(null);
 
   // Ref to avoid double-fetching in StrictMode
   const summaryFetchedRef = useRef(false);
@@ -114,6 +122,14 @@ export default function DashboardPage() {
     }
 
     fetchRecentActivity();
+
+    // Fetch memory profile in parallel
+    getToken().then((tok) => {
+      if (!tok || !summaryFetchedRef.current) return;
+      getMemoryProfile(tok)
+        .then(setMemoryProfile)
+        .catch(() => {/* silent */});
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionsLoaded]);
 
@@ -159,6 +175,21 @@ export default function DashboardPage() {
     sessionStorage.removeItem("studyco_current_session");
     router.push("/chat");
   };
+
+  const filteredPreferences = memoryProfile?.preferences
+    .map(p => p.replace(/\*\*/g, ""))
+    .filter(p => p.length >= 20)
+    .filter(p => !/generate|study plan|flashcard|quiz/i.test(p)) || [];
+
+  const filteredWeakSubjects = memoryProfile?.weak_subjects
+    .map(s => s.replace(/\*\*/g, ""))
+    .filter(s => s.length >= 10)
+    .filter(s => !/my name|nickname|hello|hi/i.test(s)) || [];
+
+  const filteredTopics = memoryProfile?.recent_topics
+    .filter(t => t.startsWith("Topic:"))
+    .map(t => t.replace("Topic:", "").replace(/\*\*/g, "").trim())
+    .slice(0, 5) || [];
 
   return (
     <DashboardLayout>
@@ -332,7 +363,7 @@ export default function DashboardPage() {
                 id="generate-plan-btn"
                 onClick={handleGeneratePlan}
                 disabled={!selectedSessionId || planState === "loading"}
-                className="w-full rounded-lg bg-primary py-2.5 text-[13px] font-medium text-white transition-all hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="rounded-lg bg-primary px-6 py-2.5 text-[13px] font-medium text-white transition-all hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 {planState === "loading" ? "Generating…" : "Generate Study Plan"}
               </button>
@@ -404,6 +435,74 @@ export default function DashboardPage() {
                   From: {recentSession.title} · {relativeTime(recentSession.created_at)}
                 </p>
               </div>
+            )}
+          </div>
+        </section>
+
+        {/* ── What Athena Knows ────────────────────────────── */}
+        <section className="mt-10 mb-10 animate-fade-in" style={{ animationDelay: "300ms" }}>
+          <div className="flex items-center gap-2.5 mb-3">
+            <div className="h-px flex-1 max-w-[40px] bg-border-light" />
+            <span className="text-[10px] font-medium text-muted/60 uppercase tracking-[0.15em]">
+              What Athena knows
+            </span>
+          </div>
+
+          <div className="surface-card p-5 space-y-4">
+            {!memoryProfile ? (
+              <p className="text-[13px] text-muted/60 text-center py-6">
+                Athena is still learning about you. Keep chatting to build your profile.
+              </p>
+            ) : filteredPreferences.length === 0 &&
+              filteredWeakSubjects.length === 0 &&
+              filteredTopics.length === 0 ? (
+              <p className="text-[13px] text-muted/60 text-center py-6">
+                Keep chatting with Athena to build your personal study profile.
+              </p>
+            ) : (
+              <>
+                {filteredPreferences.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-medium text-muted/50 uppercase tracking-wider mb-2">YOUR STUDY STYLE</p>
+                    <div className="flex flex-wrap gap-2">
+                      {filteredPreferences.map((p, i) => (
+                        <span
+                          key={i}
+                          className="inline-block rounded-full bg-primary/10 text-primary px-3 py-1 text-[12px] font-medium"
+                        >
+                          {p.slice(0, 80)}{p.length > 80 ? "…" : ""}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {filteredWeakSubjects.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-[10px] font-medium text-muted/50 uppercase tracking-wider mb-2">AREAS TO FOCUS ON</p>
+                    <ul className="space-y-1">
+                      {filteredWeakSubjects.map((s, i) => (
+                        <li key={i} className="flex items-start gap-2 text-[13px] text-foreground/80">
+                          <span className="shrink-0 text-yellow-500/90 text-[11px] mt-[1px]">⚠</span>
+                          <span className="text-yellow-500/90">{s.slice(0, 80)}{s.length > 80 ? "…" : ""}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {filteredTopics.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-[10px] font-medium text-muted/50 uppercase tracking-wider mb-2">TOPICS YOU&apos;VE EXPLORED</p>
+                    <ul className="space-y-1">
+                      {filteredTopics.map((t, i) => (
+                        <li key={i} className="flex items-start gap-2 text-[13px] text-foreground/80">
+                          <span className="shrink-0 text-primary/80 text-[12px] mt-[1px]">📚</span>
+                          {t.slice(0, 80)}{t.length > 80 ? "…" : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </section>

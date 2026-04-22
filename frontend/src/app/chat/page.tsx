@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth, useUser } from "@clerk/nextjs";
 import DashboardLayout from "@/components/ui/DashboardLayout";
 import AgentBadge from "@/components/ui/AgentBadge";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
@@ -48,6 +48,7 @@ function ChatPageContent() {
   const pendingQueryRef = useRef<string | null>(null);
   const session = useSession();
   const { getToken } = useAuth();
+  const { user } = useUser();
 
   // ── On mount / URL change: load session ─────────────────
   useEffect(() => {
@@ -313,7 +314,7 @@ function ChatPageContent() {
         <div className="flex-1 overflow-y-auto pb-32 px-6 pt-14">
           <div className="mx-auto max-w-2xl space-y-5">
             {messages.map((msg) => (
-              <ChatBubble key={msg.id} message={msg} />
+              <ChatBubble key={msg.id} message={msg} userInitial={user?.firstName?.[0]?.toUpperCase() ?? user?.emailAddresses?.[0]?.emailAddress?.[0]?.toUpperCase() ?? "U"} />
             ))}
 
             {error && <ErrorBanner message={error} onRetry={() => setError(null)} />}
@@ -388,7 +389,7 @@ function ChatPageContent() {
   );
 }
 
-function ChatBubble({ message }: { message: ChatMessage }) {
+function ChatBubble({ message, userInitial }: { message: ChatMessage; userInitial: string }) {
   const isUser = message.role === "user";
   const isTyping = !isUser && !message.content;
 
@@ -401,7 +402,7 @@ function ChatBubble({ message }: { message: ChatMessage }) {
             : "bg-primary/8 text-primary"
         }`}
       >
-        {isUser ? "U" : "AI"}
+        {isUser ? userInitial : "AI"}
       </div>
 
       <div className={`max-w-[80%] ${isUser ? "items-end" : "items-start"} flex flex-col gap-1`}>
