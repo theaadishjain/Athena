@@ -1,14 +1,21 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
 import DashboardLayout from "@/components/ui/DashboardLayout";
 import ToolCard from "@/components/ui/ToolCard";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
 import ErrorBanner from "@/components/ui/ErrorBanner";
-import type { MemoryEntry, LoadingState } from "@/lib/types";
-import { getStudyPlan, getMemories } from "@/lib/api";
+import AgentBadge from "@/components/ui/AgentBadge";
+import type { ChatSessionMeta, LoadingState, ChatMessage } from "@/lib/types";
+import {
+  listSessions,
+  getSessionMessages,
+  getStudyPlan,
+} from "@/lib/api";
 import { useSession } from "@/lib/session";
+import { renderWithLatex } from "@/lib/renderMarkdown";
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -17,64 +24,136 @@ function getGreeting(): string {
   return "Good evening";
 }
 
+function relativeTime(isoString: string): string {
+  const diff = Date.now() - new Date(isoString).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} minute${mins > 1 ? "s" : ""} ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hour${hrs > 1 ? "s" : ""} ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days} day${days > 1 ? "s" : ""} ago`;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [chatInput, setChatInput] = useState("");
-  const [studyPlan, setStudyPlan] = useState<string | null>(null);
-  const [memories, setMemories] = useState<MemoryEntry[]>([]);
-  const [planState, setPlanState] = useState<LoadingState>("idle");
-  const [memoryState, setMemoryState] = useState<LoadingState>("idle");
-  const [planError, setPlanError] = useState<string | null>(null);
-  const [memoryError, setMemoryError] = useState<string | null>(null);
   const session = useSession();
+  const { getToken } = useAuth();
 
-  const fetchPlan = useCallback(async () => {
+  // ── Sessions (shared) ──────────────────────────────────────
+  const [sessions, setSessions] = useState<ChatSessionMeta[]>([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
+
+  // ── Study Plan ─────────────────────────────────────────────
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [studyPlan, setStudyPlan] = useState<string | null>(null);
+  const [planState, setPlanState] = useState<LoadingState>("idle");
+  const [planError, setPlanError] = useState<string | null>(null);
+
+  // ── Recent Context ─────────────────────────────────────────
+  const [recentMessages, setRecentMessages] = useState<ChatMessage[]>([]);
+  const [recentSession, setRecentSession] = useState<ChatSessionMeta | null>(null);
+  const [summaryState, setSummaryState] = useState<LoadingState>("idle");
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+
+  // Ref to avoid double-fetching in StrictMode
+  const summaryFetchedRef = useRef(false);
+
+  // ── Fetch sessions once on mount ───────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchSessions() {
+      try {
+        const token = await getToken();
+        if (!token || cancelled) return;
+        const data = await listSessions(token);
+        if (!cancelled) {
+          setSessions(data);
+          setSessionsLoaded(true);
+        }
+      } catch {
+        if (!cancelled) setSessionsLoaded(true); // show empty state
+      }
+    }
+    fetchSessions();
+    return () => { cancelled = true; };
+  }, [getToken]);
+
+  // ── Fetch recent context after sessions load ───────────────
+  useEffect(() => {
+    if (!sessionsLoaded) return;
+    if (summaryFetchedRef.current) return;
+    if (sessions.length === 0) {
+      setSummaryState("success");
+      return;
+    }
+
+    summaryFetchedRef.current = true;
+    const mostRecent = sessions[0];
+    setRecentSession(mostRecent);
+
+    async function fetchRecentActivity() {
+      setSummaryState("loading");
+      setSummaryError(null);
+      try {
+        const token = await getToken();
+        if (!token) return;
+
+        const msgs = await getSessionMessages(mostRecent.id, token);
+        const userMsgs = msgs
+          .filter((m) => m.role === "user")
+          .slice(-4);
+        
+        setRecentMessages(userMsgs);
+        setSummaryState("success");
+      } catch {
+        setSummaryError("Failed to load recent activity");
+        setSummaryState("error");
+      }
+    }
+
+    fetchRecentActivity();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionsLoaded]);
+
+  // ── Generate Study Plan (button click only) ────────────────
+  const handleGeneratePlan = useCallback(async () => {
+    if (!selectedSessionId) return;
     setPlanState("loading");
     setPlanError(null);
+    setStudyPlan(null);
+
     try {
-      const res = await getStudyPlan({
-        user_id: session.user_id,
-        session_id: session.session_id,
-        input: "Generate my study plan",
-      });
+      const token = await getToken();
+      if (!token) throw new Error("Auth failed");
+
+      const msgs = await getSessionMessages(selectedSessionId, token);
+      const combined = msgs
+        .map((m) => `${m.role}: ${m.content}`)
+        .join("\n");
+
+      const res = await getStudyPlan(
+        {
+          session_id: selectedSessionId,
+          input: combined,
+        },
+        token
+      );
+
       setStudyPlan(res.response);
       setPlanState("success");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load study plan";
+      const message = err instanceof Error ? err.message : "Failed to generate plan";
       setPlanError(message);
       setPlanState("error");
     }
-  }, [session]);
+  }, [selectedSessionId, getToken, session.user_id]);
 
-  const fetchMemories = useCallback(async () => {
-    setMemoryState("loading");
-    setMemoryError(null);
-    try {
-      const res = await getMemories({
-        user_id: session.user_id,
-        memory_type: "past_chats",
-        k: 5,
-      });
-      setMemories(res);
-      setMemoryState("success");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load memories";
-      setMemoryError(message);
-      setMemoryState("error");
-    }
-  }, [session]);
-
-  useEffect(() => {
-    setTimeout(() => {
-      fetchPlan();
-      fetchMemories();
-    }, 0);
-  }, [fetchPlan, fetchMemories]);
-
+  // ── Dashboard chat handoff ─────────────────────────────────
   const handleChatSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
-    // Store pending query and clear current session so chat starts fresh
     sessionStorage.setItem("athena_pending_query", chatInput.trim());
     sessionStorage.removeItem("athena_current_session");
     sessionStorage.removeItem("studyco_current_session");
@@ -201,43 +280,87 @@ export default function DashboardPage() {
           </section>
         </div>
 
-        {/* Study Plan */}
+        {/* ── Study Plan Section ──────────────────────────────── */}
         <section className="mt-12 animate-fade-in" style={{ animationDelay: "180ms" }} id="study-plan">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="h-px flex-1 max-w-[40px] bg-border-light" />
-              <span className="text-[10px] font-medium text-muted/60 uppercase tracking-[0.15em]">
-                Your study plan
-              </span>
-            </div>
-            {planState === "success" && (
-              <button
-                onClick={fetchPlan}
-                className="text-[11px] text-muted hover:text-foreground transition-colors"
-              >
-                Regenerate
-              </button>
-            )}
+          <div className="flex items-center gap-2.5 mb-3">
+            <div className="h-px flex-1 max-w-[40px] bg-border-light" />
+            <span className="text-[10px] font-medium text-muted/60 uppercase tracking-[0.15em]">
+              Your study plan
+            </span>
           </div>
 
-          <div className="surface-card p-5">
+          <div className="surface-card p-5 space-y-4">
+            {/* Session list or empty state */}
+            {!sessionsLoaded ? (
+              <div className="flex items-center justify-center py-8">
+                <LoadingSpinner size="sm" label="Loading sessions…" />
+              </div>
+            ) : sessions.length === 0 ? (
+              <p className="text-[13px] text-muted/60 text-center py-6">
+                Start a chat first to generate your study plan.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                <p className="text-[11px] text-muted/60 mb-2">
+                  Select a chat session to base the plan on:
+                </p>
+                {sessions.map((s) => (
+                  <button
+                    key={s.id}
+                    id={`session-row-${s.id}`}
+                    onClick={() => setSelectedSessionId(s.id)}
+                    className={`w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-all border ${
+                      selectedSessionId === s.id
+                        ? "border-primary/40 bg-primary/8 text-foreground"
+                        : "border-transparent bg-white/[0.02] hover:bg-white/[0.04] text-foreground/70"
+                    }`}
+                  >
+                    <span className="text-[13px] truncate flex-1">
+                      {s.title.slice(0, 35)}{s.title.length > 35 ? "…" : ""}
+                    </span>
+                    <span className="text-[11px] text-muted/50 shrink-0">
+                      {relativeTime(s.created_at)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Generate button */}
+            {sessionsLoaded && sessions.length > 0 && (
+              <button
+                id="generate-plan-btn"
+                onClick={handleGeneratePlan}
+                disabled={!selectedSessionId || planState === "loading"}
+                className="w-full rounded-lg bg-primary py-2.5 text-[13px] font-medium text-white transition-all hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                {planState === "loading" ? "Generating…" : "Generate Study Plan"}
+              </button>
+            )}
+
+            {/* Plan results */}
             {planState === "loading" && (
-              <div className="flex items-center justify-center py-10">
-                <LoadingSpinner size="lg" label="Generating your study plan…" />
+              <div className="flex items-center justify-center py-6">
+                <LoadingSpinner size="sm" label="Building your plan…" />
               </div>
             )}
             {planState === "error" && planError && (
-              <ErrorBanner message={planError} onRetry={fetchPlan} />
+              <ErrorBanner message={planError} onRetry={handleGeneratePlan} />
             )}
             {planState === "success" && studyPlan && (
-              <p className="whitespace-pre-wrap text-[13px] leading-[1.8] text-foreground/75">
-                {studyPlan}
-              </p>
+              <div className="pt-2 border-t border-border-light">
+                <div
+                  className="prose-chat prose-invert"
+                  dangerouslySetInnerHTML={{
+                    __html: renderWithLatex(studyPlan),
+                  }}
+                />
+              </div>
             )}
           </div>
         </section>
 
-        {/* Memories */}
+        {/* ── Recent Context Section ──────────────────────────── */}
         <section className="mt-10 mb-10 animate-fade-in" style={{ animationDelay: "240ms" }}>
           <div className="flex items-center gap-2.5 mb-3">
             <div className="h-px flex-1 max-w-[40px] bg-border-light" />
@@ -247,34 +370,39 @@ export default function DashboardPage() {
           </div>
 
           <div className="surface-card p-5">
-            {memoryState === "loading" && (
+            {summaryState === "loading" && (
               <div className="flex items-center justify-center py-10">
-                <LoadingSpinner size="lg" label="Loading memories…" />
+                <LoadingSpinner size="lg" label="Summarizing recent activity…" />
               </div>
             )}
-            {memoryState === "error" && memoryError && (
-              <ErrorBanner message={memoryError} onRetry={fetchMemories} />
+            {summaryState === "error" && summaryError && (
+              <ErrorBanner message={summaryError} onRetry={() => {
+                summaryFetchedRef.current = false;
+                setSummaryState("idle");
+                setSummaryError(null);
+              }} />
             )}
-            {memoryState === "success" && memories.length === 0 && (
+            {(summaryState === "idle" || summaryState === "success") && (sessions.length === 0 || recentMessages.length === 0) && sessionsLoaded && (
               <p className="text-[13px] text-muted/60 text-center py-6">
-                No context yet. Start chatting or upload notes to build memory.
+                No recent activity yet. Start a chat to see your study history here.
               </p>
             )}
-            {memoryState === "success" && memories.length > 0 && (
-              <div className="space-y-2">
-                {memories.map((mem, i) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-3 rounded-lg bg-white/[0.02] p-3 transition-colors hover:bg-white/[0.04]"
-                  >
-                    <span className="shrink-0 mt-0.5 inline-flex items-center rounded bg-primary/8 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-primary/80">
-                      {mem.memory_type}
-                    </span>
-                    <p className="text-[13px] leading-relaxed text-foreground/65">
-                      {mem.content}
-                    </p>
-                  </div>
-                ))}
+            {summaryState === "success" && recentMessages.length > 0 && recentSession && (
+              <div className="space-y-4">
+                <p className="text-[11px] text-muted/60 uppercase tracking-wider font-medium">
+                  What you studied recently:
+                </p>
+                <ul className="space-y-1">
+                  {recentMessages.map((msg, i) => (
+                    <li key={i} className="text-sm text-foreground/80 py-2 border-b border-white/[0.03] last:border-0">
+                      {msg.content.slice(0, 120)}
+                      {msg.content.length > 120 ? "..." : ""}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-[11px] text-muted/50 pt-2 italic">
+                  From: {recentSession.title} · {relativeTime(recentSession.created_at)}
+                </p>
               </div>
             )}
           </div>

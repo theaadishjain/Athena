@@ -1,8 +1,9 @@
 import os
 import tempfile
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 
 from app.agents.shared.state import AcademicState
+from app.core.auth import get_current_user
 from app.core.dependencies import get_coordinator_workflow
 from app.schemas.responses import UnifiedResponse
 from app.services.ingest import preprocess_document
@@ -13,8 +14,8 @@ router = APIRouter(prefix="/summarize", tags=["summarize"])
 @router.post("", response_model=UnifiedResponse)
 async def summarize(
     file: UploadFile = File(...),
-    user_id: str = Form(...),
     session_id: str = Form(...),
+    user_id: str = Depends(get_current_user),
 ) -> UnifiedResponse:
     suffix = os.path.splitext(file.filename)[1].lower() if file.filename else ""
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:

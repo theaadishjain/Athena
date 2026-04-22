@@ -190,10 +190,10 @@ function ChatPageContent() {
 
     await sendChatMessageStream(
       {
-        user_id: session.user_id,
         session_id: activeSessionId as string,
         input: trimmed,
       },
+      await getToken() as string,
       (token) => {
         finalContent += token;
         setMessages((prev) => {

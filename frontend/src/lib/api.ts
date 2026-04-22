@@ -34,6 +34,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
 
 export async function sendChatMessageStream(
   params: ChatRequest,
+  token: string,
   onToken: (token: string) => void,
   onDone: (meta: {
     agent: string
@@ -47,7 +48,10 @@ export async function sendChatMessageStream(
   try {
     const res = await fetch(`${BASE_URL}/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
       body: JSON.stringify(params),
     })
 
@@ -102,12 +106,16 @@ export async function sendChatMessageStream(
 // ─── Study Plan ───────────────────────────────────────────
 
 export async function getStudyPlan(
-  params: PlanRequest
+  params: PlanRequest,
+  token: string
 ): Promise<UnifiedResponse> {
   try {
     const res = await fetch(`${BASE_URL}/plan`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
       body: JSON.stringify(params),
     });
     return handleResponse<UnifiedResponse>(res);
@@ -125,17 +133,19 @@ export async function getStudyPlan(
 
 export async function summarizeFile(
   file: File,
-  userId: string,
-  sessionId: string
+  sessionId: string,
+  token: string
 ): Promise<UnifiedResponse> {
   const formData = new FormData()
   formData.append("file", file)
-  formData.append("user_id", userId)
   formData.append("session_id", sessionId)
 
   try {
     const res = await fetch(`${BASE_URL}/summarize`, {
       method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+      },
       body: formData,
     })
     return handleResponse<UnifiedResponse>(res)
@@ -158,19 +168,21 @@ interface MemoryReadResponse {
 }
 
 export async function getMemories(
-  params: MemoryQuery
+  params: MemoryQuery,
+  token: string
 ): Promise<MemoryEntry[]> {
   const memoryType = params.memory_type || "general";
   const url = new URL(`${BASE_URL}/memory`);
-  url.searchParams.set("user_id", params.user_id);
+  url.searchParams.set("user_id", params.user_id ?? "");
   url.searchParams.set("memory_type", memoryType);
   if (params.k !== undefined) url.searchParams.set("k", String(params.k));
   if (params.query) url.searchParams.set("query", params.query);
 
   try {
-    const res = await fetch(url.toString());
+    const res = await fetch(url.toString(), {
+      headers: { "Authorization": `Bearer ${token}` },
+    });
     const data = await handleResponse<MemoryReadResponse>(res);
-    // Transform backend shape to MemoryEntry[]
     return data.memories.map((content) => ({
       memory_type: data.memory_type,
       content,

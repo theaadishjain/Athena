@@ -1,11 +1,11 @@
 import asyncio
 import json
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from typing import Literal
 
-from app.agents.coordinator.workflow import CoordinatorWorkflow
 from app.agents.shared.state import AcademicState
+from app.core.auth import get_current_user
 from app.core.dependencies import get_coordinator_workflow
 from app.schemas.requests import ChatRequest
 
@@ -14,10 +14,11 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 def build_state(
     payload: ChatRequest,
+    user_id: str,
     intent: Literal["planner", "summarizer", "advisor", "coordinator", "flashcard", "quiz"],
 ) -> AcademicState:
     return AcademicState(
-        user_id=payload.user_id,
+        user_id=user_id,
         session_id=payload.session_id,
         input=payload.input,
         intent=intent,
@@ -31,18 +32,21 @@ def build_state(
 
 
 @router.post("")
-async def chat(payload: ChatRequest) -> StreamingResponse:
+async def chat(
+    payload: ChatRequest,
+    user_id: str = Depends(get_current_user),
+) -> StreamingResponse:
     async def generate():
         try:
-            state = build_state(payload, "coordinator")
+            state = build_state(payload, user_id, "coordinator")
             workflow = get_coordinator_workflow()
             result = await workflow.run(state)
-            
+
             response_text = result["agent_output"]
             agent = result["intent"]
             memory_updated = result["memory_written"]
             fallback = bool(result.get("error"))
-            
+
             # Stream text token by token (word level is fine)
             words = response_text.split(" ")
             for i, word in enumerate(words):
@@ -50,7 +54,7 @@ async def chat(payload: ChatRequest) -> StreamingResponse:
                 data = json.dumps({"type": "token", "content": chunk})
                 yield f"data: {data}\n\n"
                 await asyncio.sleep(0.02)
-            
+
             # Send final metadata chunk
             final = json.dumps({
                 "type": "done",
@@ -65,7 +69,6 @@ async def chat(payload: ChatRequest) -> StreamingResponse:
         except Exception as exc:
             import traceback
             traceback.print_exc()
-            # Send error as done event so client doesn't hang
             error_final = json.dumps({
                 "type": "done",
                 "agent": "coordinator",
@@ -76,7 +79,7 @@ async def chat(payload: ChatRequest) -> StreamingResponse:
                 "error": str(exc)
             })
             yield f"data: {error_final}\n\n"
-    
+
     return StreamingResponse(
         generate(),
         media_type="text/event-stream",

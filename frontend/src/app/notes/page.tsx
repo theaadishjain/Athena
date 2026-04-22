@@ -6,6 +6,7 @@ import LoadingSpinner from "@/components/ui/LoadingSpinner";
 import ErrorBanner from "@/components/ui/ErrorBanner";
 import AgentBadge from "@/components/ui/AgentBadge";
 import type { UnifiedResponse, LoadingState } from "@/lib/types";
+import { useAuth } from "@clerk/nextjs";
 import { summarizeFile } from "@/lib/api";
 import { useSession } from "@/lib/session";
 
@@ -25,6 +26,7 @@ export default function NotesPage() {
   const [isDragOver, setIsDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const session = useSession();
+  const { getToken } = useAuth();
 
   const handleFile = useCallback((selected: File) => {
     if (!isAcceptedFile(selected)) {
@@ -62,7 +64,9 @@ export default function NotesPage() {
     setLoadingState("loading");
     setError(null);
     try {
-      const res = await summarizeFile(file, session.user_id, session.session_id);
+      const token = await getToken();
+      if (!token) throw new Error("Auth failed");
+      const res = await summarizeFile(file, session.session_id, token);
       setSummary(res);
       setLoadingState("success");
     } catch (err) {
@@ -70,7 +74,7 @@ export default function NotesPage() {
       setError(message);
       setLoadingState("error");
     }
-  }, [file, loadingState, session]);
+  }, [file, loadingState, session, getToken]);
 
   const handleReset = useCallback(() => {
     setFile(null);

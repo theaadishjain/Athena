@@ -39,13 +39,11 @@ export interface ChatMessage {
 // ─── API Request Parameter Types ──────────────────────────
 
 export interface ChatRequest {
-  user_id: string;
   session_id: string;
   input: string;
 }
 
 export interface PlanRequest {
-  user_id: string;
   session_id: string;
   input: string;
 }
