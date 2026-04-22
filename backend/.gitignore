@@ -3,7 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 venv/
+.venv/
 .env
+.env.*
 .pytest_cache/
 .coverage
 htmlcov/
@@ -12,6 +14,9 @@ htmlcov/
 
 # Database
 studyco.db
+*.db
+*.sqlite
 
 # Test artifacts
 test_output.json
+*.log

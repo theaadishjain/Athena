@@ -10,3 +10,5 @@ sqlalchemy
 aiosqlite
 python-jose[cryptography]
 httpx
+python-multipart
+greenlet

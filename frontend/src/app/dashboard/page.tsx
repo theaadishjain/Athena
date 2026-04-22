@@ -4,9 +4,6 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import DashboardLayout from "@/components/ui/DashboardLayout";
-import ToolCard from "@/components/ui/ToolCard";
-import LoadingSpinner from "@/components/ui/LoadingSpinner";
-import ErrorBanner from "@/components/ui/ErrorBanner";
 import AgentBadge from "@/components/ui/AgentBadge";
 import type { ChatSessionMeta, LoadingState, ChatMessage } from "@/lib/types";
 import {
@@ -20,8 +17,9 @@ import { renderWithLatex } from "@/lib/renderMarkdown";
 
 function getGreeting(): string {
   const h = new Date().getHours();
+  if (h < 5) return "Good night";
   if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
+  if (h < 18) return "Good afternoon";
   return "Good evening";
 }
 
@@ -29,46 +27,69 @@ function relativeTime(isoString: string): string {
   const diff = Date.now() - new Date(isoString).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} minute${mins > 1 ? "s" : ""} ago`;
+  if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} hour${hrs > 1 ? "s" : ""} ago`;
+  if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
-  return `${days} day${days > 1 ? "s" : ""} ago`;
+  return `${days}d ago`;
+}
+
+function formatHeaderDate(): string {
+  const d = new Date();
+  const months = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+  const days = ["SUN","MON","TUE","WED","THU","FRI","SAT"];
+  const year = d.getFullYear().toString().replace(/./g, (c, i) => {
+    const roman: Record<string, string> = { "2": "MM", "0": "O", "6": "VI" };
+    return roman[c] ?? c;
+  });
+  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} · ${days[d.getDay()]}`;
+}
+
+function CornerTicks({ size = 8, offset = 0, color = "rgba(237,232,220,0.3)" }: { size?: number; offset?: number; color?: string }) {
+  const corners: React.CSSProperties[] = [
+    { top: offset, left: offset },
+    { top: offset, right: offset },
+    { bottom: offset, right: offset },
+    { bottom: offset, left: offset },
+  ];
+  const rotations = ["rotate(0)", "rotate(90deg)", "rotate(180deg)", "rotate(270deg)"];
+  return (
+    <>
+      {corners.map((style, i) => (
+        <svg key={i} style={{ position: "absolute", ...style, transform: rotations[i] }} width={size} height={size} viewBox="0 0 8 8" fill="none">
+          <path d="M0 8 L0 0 L8 0" stroke={color} strokeWidth="1" />
+        </svg>
+      ))}
+    </>
+  );
 }
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [chatInput, setChatInput] = useState("");
   const session = useSession();
   const { getToken } = useAuth();
 
-  // ── Sessions (shared) ──────────────────────────────────────
   const [sessions, setSessions] = useState<ChatSessionMeta[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
 
-  // ── Study Plan ─────────────────────────────────────────────
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [studyPlan, setStudyPlan] = useState<string | null>(null);
   const [planState, setPlanState] = useState<LoadingState>("idle");
   const [planError, setPlanError] = useState<string | null>(null);
+  const [examTopic, setExamTopic] = useState("");
+  const [sessionCount, setSessionCount] = useState(3);
 
-  // ── Recent Context ─────────────────────────────────────────
   const [recentMessages, setRecentMessages] = useState<ChatMessage[]>([]);
   const [recentSession, setRecentSession] = useState<ChatSessionMeta | null>(null);
-  const [summaryState, setSummaryState] = useState<LoadingState>("idle");
-  const [summaryError, setSummaryError] = useState<string | null>(null);
 
-  // ── Memory Profile ──────────────────────────────────────
   const [memoryProfile, setMemoryProfile] = useState<{
     preferences: string[];
     weak_subjects: string[];
     recent_topics: string[];
   } | null>(null);
 
-  // Ref to avoid double-fetching in StrictMode
   const summaryFetchedRef = useRef(false);
 
-  // ── Fetch sessions once on mount ───────────────────────────
   useEffect(() => {
     let cancelled = false;
     async function fetchSessions() {
@@ -81,96 +102,64 @@ export default function DashboardPage() {
           setSessionsLoaded(true);
         }
       } catch {
-        if (!cancelled) setSessionsLoaded(true); // show empty state
+        if (!cancelled) setSessionsLoaded(true);
       }
     }
     fetchSessions();
     return () => { cancelled = true; };
   }, [getToken]);
 
-  // ── Fetch recent context after sessions load ───────────────
   useEffect(() => {
     if (!sessionsLoaded) return;
     if (summaryFetchedRef.current) return;
-    if (sessions.length === 0) {
-      setSummaryState("success");
-      return;
-    }
+    if (sessions.length === 0) return;
 
     summaryFetchedRef.current = true;
     const mostRecent = sessions[0];
     setRecentSession(mostRecent);
 
     async function fetchRecentActivity() {
-      setSummaryState("loading");
-      setSummaryError(null);
       try {
         const token = await getToken();
         if (!token) return;
-
         const msgs = await getSessionMessages(mostRecent.id, token);
-        const userMsgs = msgs
-          .filter((m) => m.role === "user")
-          .slice(-4);
-        
-        setRecentMessages(userMsgs);
-        setSummaryState("success");
-      } catch {
-        setSummaryError("Failed to load recent activity");
-        setSummaryState("error");
-      }
+        setRecentMessages(msgs.filter((m) => m.role === "user").slice(-4));
+      } catch { /* silent */ }
     }
-
     fetchRecentActivity();
 
-    // Fetch memory profile in parallel
     getToken().then((tok) => {
-      if (!tok || !summaryFetchedRef.current) return;
+      if (!tok) return;
       getMemoryProfile(tok)
         .then(setMemoryProfile)
-        .catch(() => {/* silent */});
+        .catch(() => {});
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionsLoaded]);
 
-  // ── Generate Study Plan (button click only) ────────────────
   const handleGeneratePlan = useCallback(async () => {
     if (!selectedSessionId) return;
     setPlanState("loading");
     setPlanError(null);
     setStudyPlan(null);
-
     try {
       const token = await getToken();
       if (!token) throw new Error("Auth failed");
-
       const msgs = await getSessionMessages(selectedSessionId, token);
-      const combined = msgs
-        .map((m) => `${m.role}: ${m.content}`)
-        .join("\n");
-
-      const res = await getStudyPlan(
-        {
-          session_id: selectedSessionId,
-          input: combined,
-        },
-        token
-      );
-
+      const combined = msgs.map((m) => `${m.role}: ${m.content}`).join("\n");
+      const res = await getStudyPlan({ session_id: selectedSessionId, input: combined }, token);
       setStudyPlan(res.response);
       setPlanState("success");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to generate plan";
-      setPlanError(message);
+      setPlanError(err instanceof Error ? err.message : "Failed to generate plan");
       setPlanState("error");
     }
   }, [selectedSessionId, getToken, session.user_id]);
 
-  // ── Dashboard chat handoff ─────────────────────────────────
   const handleChatSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim()) return;
-    sessionStorage.setItem("athena_pending_query", chatInput.trim());
+    if (!examTopic.trim()) return;
+    sessionStorage.setItem("athena_pending_query", examTopic.trim());
     sessionStorage.removeItem("athena_current_session");
     sessionStorage.removeItem("studyco_current_session");
     router.push("/chat");
@@ -191,322 +180,421 @@ export default function DashboardPage() {
     .map(t => t.replace("Topic:", "").replace(/\*\*/g, "").trim())
     .slice(0, 5) || [];
 
+  const greeting = getGreeting();
+
   return (
     <DashboardLayout>
-      <div className="p-8 lg:p-10 max-w-4xl">
-        {/* Greeting */}
-        <div className="mb-10 animate-fade-in">
-          <h1 className="text-xl font-semibold tracking-tight mb-1">
-            {getGreeting()} 👋
-          </h1>
-          <p className="text-[13px] text-muted">
-            Here&apos;s your workspace. Pick up where you left off.
-          </p>
+      <div style={{ flex: 1, minWidth: 0, height: "100%", overflow: "auto", position: "relative" }}>
+
+        {/* Subtle orbital backdrop */}
+        <div style={{ position: "absolute", top: 0, right: 0, width: 720, height: 720, pointerEvents: "none", zIndex: 0 }}>
+          <div style={{
+            position: "absolute", width: 900, height: 900, top: -300, right: -200,
+            background: "radial-gradient(circle, rgba(237,232,220,0.04), transparent 70%)",
+          }} />
+          <svg width="720" height="720" viewBox="0 0 720 720" style={{ position: "absolute", inset: 0, opacity: 0.5 }}>
+            <g style={{ transformOrigin: "460px 260px", animation: "athenaSpin 180s linear infinite" }}>
+              {[180, 260, 340].map((r, i) => (
+                <ellipse key={i} cx="460" cy="260" rx={r} ry={r * 0.35}
+                  fill="none" stroke="#ede8dc" strokeOpacity={0.06 + i * 0.01} strokeWidth="0.8" />
+              ))}
+            </g>
+            <circle cx="460" cy="260" r="2" fill="#ede8dc" opacity="0.4" />
+          </svg>
         </div>
 
-        {/* Chat Input */}
-        <div className="mb-12 animate-fade-in" style={{ animationDelay: "60ms" }}>
-          <form onSubmit={handleChatSubmit} className="surface-card p-1.5 flex items-center gap-2">
-            <div className="h-8 w-8 rounded-md bg-primary/8 flex items-center justify-center shrink-0 ml-1">
-              <svg className="h-3.5 w-3.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" />
-              </svg>
-            </div>
-            <input
-              id="dashboard-chat-input"
-              type="text"
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              placeholder="Ask Athena anything..."
-              className="flex-1 bg-transparent px-2 py-2 text-[13px] text-foreground placeholder:text-muted/50 focus:outline-none"
-            />
-            <button
-              type="submit"
-              disabled={!chatInput.trim()}
-              className="shrink-0 rounded-md bg-primary/10 text-primary px-3.5 py-1.5 text-[12px] font-medium transition-all hover:bg-primary/20 disabled:opacity-20 disabled:cursor-not-allowed"
-            >
-              Send
-            </button>
-          </form>
-        </div>
+        <div style={{ position: "relative", zIndex: 1, padding: "34px 40px" }}>
 
-        {/* Tools Grid */}
-        <div className="space-y-8 animate-fade-in" style={{ animationDelay: "120ms" }}>
-          {/* Study */}
-          <section>
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className="h-px flex-1 max-w-[40px] bg-border-light" />
-              <span className="text-[10px] font-medium text-muted/60 uppercase tracking-[0.15em]">
-                Study
-              </span>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <ToolCard
-                title="Study Plan"
-                description="AI-generated schedule from your goals."
-                href="/dashboard#study-plan"
-                icon={<svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" /></svg>}
-              />
-              <ToolCard
-                title="Flashcards"
-                description="Auto-generate cards from your notes."
-                href="/chat?q=create flashcards from my notes"
-                icon={<svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M6 6.878V6a2.25 2.25 0 0 1 2.25-2.25h7.5A2.25 2.25 0 0 1 18 6v.878m-12 0c.235-.083.487-.128.75-.128h10.5c.263 0 .515.045.75.128m-12 0A2.25 2.25 0 0 0 4.5 9v.878m13.5-3A2.25 2.25 0 0 1 19.5 9v.878m0 0a2.246 2.246 0 0 0-.75-.128H5.25c-.263 0-.515.045-.75.128m15 0A2.25 2.25 0 0 1 21 12v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6c0-1.243 1.007-2.25 2.25-2.25h13.5" /></svg>}
-              />
-              <ToolCard
-                title="Practice Quiz"
-                description="Test yourself with generated questions."
-                href="/chat?q=create a practice quiz for me"
-                icon={<svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z" /></svg>}
-              />
-            </div>
-          </section>
-
-          {/* Homework */}
-          <section>
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className="h-px flex-1 max-w-[40px] bg-border-light" />
-              <span className="text-[10px] font-medium text-muted/60 uppercase tracking-[0.15em]">
-                Homework
-              </span>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <ToolCard
-                title="Solve"
-                description="Step-by-step solutions for problems."
-                comingSoon
-                icon={<svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 15.75V18m-7.5-6.75h.008v.008H8.25v-.008Zm0 2.25h.008v.008H8.25v-.008Zm0 2.25h.008v.008H8.25v-.008Zm0 2.25h.008v.008H8.25v-.008Zm2.25-4.5h.008v.008H10.5v-.008Zm0 2.25h.008v.008H10.5v-.008Zm0 2.25h.008v.008H10.5v-.008Zm2.25-4.5h.008v.008H12.75v-.008Zm0 2.25h.008v.008H12.75v-.008Zm2.25-2.25h.008v.008H15v-.008Zm0 2.25h.008v.008H15v-.008ZM4.5 19.5h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z" /></svg>}
-              />
-              <ToolCard
-                title="Write"
-                description="Draft essays and assignments with AI."
-                comingSoon
-                icon={<svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>}
-              />
-            </div>
-          </section>
-
-          {/* Notes */}
-          <section>
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className="h-px flex-1 max-w-[40px] bg-border-light" />
-              <span className="text-[10px] font-medium text-muted/60 uppercase tracking-[0.15em]">
-                Notes
-              </span>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <ToolCard
-                title="Summarize"
-                description="Upload files. Get the key points."
-                href="/notes"
-                icon={<svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>}
-              />
-              <ToolCard
-                title="Recording"
-                description="Lecture recording to auto-notes."
-                comingSoon
-                icon={<svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" /></svg>}
-              />
-            </div>
-          </section>
-        </div>
-
-        {/* ── Study Plan Section ──────────────────────────────── */}
-        <section className="mt-12 animate-fade-in" style={{ animationDelay: "180ms" }} id="study-plan">
-          <div className="flex items-center gap-2.5 mb-3">
-            <div className="h-px flex-1 max-w-[40px] bg-border-light" />
-            <span className="text-[10px] font-medium text-muted/60 uppercase tracking-[0.15em]">
-              Your study plan
-            </span>
+          {/* Running header */}
+          <div style={{
+            display: "flex", justifyContent: "space-between", alignItems: "baseline",
+            borderBottom: "1px solid var(--border)", paddingBottom: 12, marginBottom: 32,
+          }}>
+            <span className="sect-num">§ DASHBOARD</span>
+            <span className="sect-num">{formatHeaderDate()}</span>
+            <span className="sect-num">ATHENA · MMXXVI</span>
           </div>
 
-          <div className="surface-card p-5 space-y-4">
-            {/* Session list or empty state */}
-            {!sessionsLoaded ? (
-              <div className="flex items-center justify-center py-8">
-                <LoadingSpinner size="sm" label="Loading sessions…" />
+          {/* Greeting + Plan Generator */}
+          <div style={{ display: "grid", gridTemplateColumns: "1.35fr 1fr", gap: 32, alignItems: "start", marginBottom: 32 }}>
+
+            {/* Greeting block */}
+            <div style={{ paddingTop: 4 }}>
+              <div className="eyebrow" style={{ marginBottom: 16 }}>
+                {sessions.length > 0 && recentSession
+                  ? <><span style={{ color: "var(--cream)" }}>{recentSession.title.slice(0, 40)}</span> · last session</>
+                  : "Start your first session today"
+                }
               </div>
-            ) : sessions.length === 0 ? (
-              <p className="text-[13px] text-muted/60 text-center py-6">
-                Start a chat first to generate your study plan.
+              <h1 style={{
+                fontSize: 72, lineHeight: 0.95,
+                fontFamily: "var(--font-head)", fontWeight: 400,
+                letterSpacing: "-0.02em", color: "var(--cream)",
+                marginBottom: 18,
+              }}>
+                {greeting},<br />
+                <em className="serif-i">student.</em>
+              </h1>
+              <p style={{ fontSize: 15, lineHeight: 1.5, color: "var(--cream-dim)", maxWidth: 480, marginBottom: 24, fontWeight: 300 }}>
+                {sessions.length > 0
+                  ? `You have ${sessions.length} chat session${sessions.length > 1 ? "s" : ""} saved. Pick up where you left off or start something new.`
+                  : "Ask anything. Athena will help you study smarter, summarize your notes, and build a study plan."
+                }
               </p>
-            ) : (
-              <div className="space-y-1.5">
-                <p className="text-[11px] text-muted/60 mb-2">
-                  Select a chat session to base the plan on:
-                </p>
-                {sessions.map((s) => (
-                  <button
-                    key={s.id}
-                    id={`session-row-${s.id}`}
-                    onClick={() => setSelectedSessionId(s.id)}
-                    className={`w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-all border ${
-                      selectedSessionId === s.id
-                        ? "border-primary/40 bg-primary/8 text-foreground"
-                        : "border-transparent bg-white/[0.02] hover:bg-white/[0.04] text-foreground/70"
-                    }`}
-                  >
-                    <span className="text-[13px] truncate flex-1">
-                      {s.title.slice(0, 35)}{s.title.length > 35 ? "…" : ""}
-                    </span>
-                    <span className="text-[11px] text-muted/50 shrink-0">
-                      {relativeTime(s.created_at)}
-                    </span>
-                  </button>
-                ))}
+              <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  onClick={() => { sessionStorage.removeItem("athena_current_session"); router.push("/chat"); }}
+                  className="btn btn-primary"
+                  style={{ fontSize: 11, padding: "13px 20px", fontFamily: "var(--font-mono)", letterSpacing: "0.08em", textTransform: "uppercase" }}
+                >
+                  {sessions.length > 0 ? "Resume session →" : "Start chatting →"}
+                </button>
+                <button
+                  onClick={() => router.push("/notes")}
+                  className="btn btn-ghost"
+                  style={{ fontSize: 11, padding: "13px 18px", fontFamily: "var(--font-mono)", letterSpacing: "0.08em", textTransform: "uppercase" }}
+                >
+                  Upload lecture
+                </button>
               </div>
-            )}
+            </div>
 
-            {/* Generate button */}
-            {sessionsLoaded && sessions.length > 0 && (
-              <button
-                id="generate-plan-btn"
-                onClick={handleGeneratePlan}
-                disabled={!selectedSessionId || planState === "loading"}
-                className="rounded-lg bg-primary px-6 py-2.5 text-[13px] font-medium text-white transition-all hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                {planState === "loading" ? "Generating…" : "Generate Study Plan"}
-              </button>
-            )}
-
-            {/* Plan results */}
-            {planState === "loading" && (
-              <div className="flex items-center justify-center py-6">
-                <LoadingSpinner size="sm" label="Building your plan…" />
+            {/* Plan Generator card */}
+            <div style={{ border: "1px solid var(--border-strong)", position: "relative", background: "rgba(237,232,220,0.015)" }}>
+              <CornerTicks size={8} offset={0} color="rgba(237,232,220,0.4)" />
+              <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+                <span className="sect-num">§ PLAN GENERATOR</span>
+                <AgentBadge agent="Planner" />
               </div>
-            )}
-            {planState === "error" && planError && (
-              <ErrorBanner message={planError} onRetry={handleGeneratePlan} />
-            )}
-            {planState === "success" && studyPlan && (
-              <div className="pt-2 border-t border-border-light">
-                <div
-                  className="prose-chat prose-invert"
-                  dangerouslySetInnerHTML={{
-                    __html: renderWithLatex(studyPlan),
+              <div style={{ padding: "18px 20px" }}>
+                <label className="sect-num" style={{ fontSize: 9, display: "block", marginBottom: 6 }}>EXAM / TOPIC</label>
+                <input
+                  className="athena-input"
+                  value={examTopic}
+                  onChange={(e) => setExamTopic(e.target.value)}
+                  placeholder="e.g. Linear Algebra Midterm"
+                  style={{
+                    fontFamily: "var(--font-head)", fontSize: 17, padding: "8px 0",
+                    borderLeft: 0, borderRight: 0, borderTop: 0,
+                    borderBottom: "1px solid var(--border-strong)",
+                    background: "transparent", marginBottom: 16, display: "block", width: "100%",
                   }}
                 />
-              </div>
-            )}
-          </div>
-        </section>
 
-        {/* ── Recent Context Section ──────────────────────────── */}
-        <section className="mt-10 mb-10 animate-fade-in" style={{ animationDelay: "240ms" }}>
-          <div className="flex items-center gap-2.5 mb-3">
-            <div className="h-px flex-1 max-w-[40px] bg-border-light" />
-            <span className="text-[10px] font-medium text-muted/60 uppercase tracking-[0.15em]">
-              Recent context
-            </span>
-          </div>
-
-          <div className="surface-card p-5">
-            {summaryState === "loading" && (
-              <div className="flex items-center justify-center py-10">
-                <LoadingSpinner size="lg" label="Summarizing recent activity…" />
-              </div>
-            )}
-            {summaryState === "error" && summaryError && (
-              <ErrorBanner message={summaryError} onRetry={() => {
-                summaryFetchedRef.current = false;
-                setSummaryState("idle");
-                setSummaryError(null);
-              }} />
-            )}
-            {(summaryState === "idle" || summaryState === "success") && (sessions.length === 0 || recentMessages.length === 0) && sessionsLoaded && (
-              <p className="text-[13px] text-muted/60 text-center py-6">
-                No recent activity yet. Start a chat to see your study history here.
-              </p>
-            )}
-            {summaryState === "success" && recentMessages.length > 0 && recentSession && (
-              <div className="space-y-4">
-                <p className="text-[11px] text-muted/60 uppercase tracking-wider font-medium">
-                  What you studied recently:
-                </p>
-                <ul className="space-y-1">
-                  {recentMessages.map((msg, i) => (
-                    <li key={i} className="text-sm text-foreground/80 py-2 border-b border-white/[0.03] last:border-0">
-                      {msg.content.slice(0, 120)}
-                      {msg.content.length > 120 ? "..." : ""}
-                    </li>
-                  ))}
-                </ul>
-                <p className="text-[11px] text-muted/50 pt-2 italic">
-                  From: {recentSession.title} · {relativeTime(recentSession.created_at)}
-                </p>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* ── What Athena Knows ────────────────────────────── */}
-        <section className="mt-10 mb-10 animate-fade-in" style={{ animationDelay: "300ms" }}>
-          <div className="flex items-center gap-2.5 mb-3">
-            <div className="h-px flex-1 max-w-[40px] bg-border-light" />
-            <span className="text-[10px] font-medium text-muted/60 uppercase tracking-[0.15em]">
-              What Athena knows
-            </span>
-          </div>
-
-          <div className="surface-card p-5 space-y-4">
-            {!memoryProfile ? (
-              <p className="text-[13px] text-muted/60 text-center py-6">
-                Athena is still learning about you. Keep chatting to build your profile.
-              </p>
-            ) : filteredPreferences.length === 0 &&
-              filteredWeakSubjects.length === 0 &&
-              filteredTopics.length === 0 ? (
-              <p className="text-[13px] text-muted/60 text-center py-6">
-                Keep chatting with Athena to build your personal study profile.
-              </p>
-            ) : (
-              <>
-                {filteredPreferences.length > 0 && (
-                  <div>
-                    <p className="text-[10px] font-medium text-muted/50 uppercase tracking-wider mb-2">YOUR STUDY STYLE</p>
-                    <div className="flex flex-wrap gap-2">
-                      {filteredPreferences.map((p, i) => (
-                        <span
-                          key={i}
-                          className="inline-block rounded-full bg-primary/10 text-primary px-3 py-1 text-[12px] font-medium"
+                {/* Base on session */}
+                {sessionsLoaded && sessions.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <label className="sect-num" style={{ fontSize: 9, display: "block", marginBottom: 6 }}>BASE ON SESSION</label>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 110, overflow: "auto" }}>
+                      {sessions.slice(0, 5).map((s) => (
+                        <button key={s.id}
+                          id={`session-row-${s.id}`}
+                          onClick={() => setSelectedSessionId(s.id)}
+                          style={{
+                            textAlign: "left", padding: "6px 10px", fontSize: 11,
+                            background: selectedSessionId === s.id ? "rgba(237,232,220,0.08)" : "transparent",
+                            border: `1px solid ${selectedSessionId === s.id ? "var(--cream)" : "var(--border)"}`,
+                            color: selectedSessionId === s.id ? "var(--cream)" : "var(--text-muted)",
+                            fontFamily: "var(--font-head)", cursor: "pointer", transition: "all .12s",
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          }}
                         >
-                          {p.slice(0, 80)}{p.length > 80 ? "…" : ""}
-                        </span>
+                          {s.title.slice(0, 40)}{s.title.length > 40 ? "…" : ""}
+                        </button>
                       ))}
                     </div>
                   </div>
                 )}
-                {filteredWeakSubjects.length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-[10px] font-medium text-muted/50 uppercase tracking-wider mb-2">AREAS TO FOCUS ON</p>
-                    <ul className="space-y-1">
-                      {filteredWeakSubjects.map((s, i) => (
-                        <li key={i} className="flex items-start gap-2 text-[13px] text-foreground/80">
-                          <span className="shrink-0 text-yellow-500/90 text-[11px] mt-[1px]">⚠</span>
-                          <span className="text-yellow-500/90">{s.slice(0, 80)}{s.length > 80 ? "…" : ""}</span>
-                        </li>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <label className="sect-num" style={{ fontSize: 9, display: "block", marginBottom: 6 }}>SESSIONS</label>
+                    <div style={{ display: "flex", gap: 3 }}>
+                      {[2, 3, 4, 5].map(n => (
+                        <button key={n}
+                          onClick={() => setSessionCount(n)}
+                          style={{
+                            flex: 1, padding: "5px 0", fontSize: 11,
+                            color: sessionCount === n ? "#0a0a0c" : "var(--text-muted)",
+                            background: sessionCount === n ? "var(--cream)" : "transparent",
+                            border: `1px solid ${sessionCount === n ? "var(--cream)" : "var(--border-strong)"}`,
+                            fontFamily: "var(--font-mono)", cursor: "pointer", transition: "all .12s",
+                          }}>{n}</button>
                       ))}
-                    </ul>
+                    </div>
                   </div>
-                )}
-                {filteredTopics.length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-[10px] font-medium text-muted/50 uppercase tracking-wider mb-2">TOPICS YOU&apos;VE EXPLORED</p>
-                    <ul className="space-y-1">
-                      {filteredTopics.map((t, i) => (
-                        <li key={i} className="flex items-start gap-2 text-[13px] text-foreground/80">
-                          <span className="shrink-0 text-primary/80 text-[12px] mt-[1px]">📚</span>
-                          {t.slice(0, 80)}{t.length > 80 ? "…" : ""}
-                        </li>
-                      ))}
-                    </ul>
+                  <div style={{ display: "flex", alignItems: "flex-end" }}>
+                    {planState === "error" && (
+                      <span style={{ fontSize: 10, color: "var(--cream)", fontFamily: "var(--font-mono)" }}>
+                        {planError}
+                      </span>
+                    )}
                   </div>
-                )}
-              </>
-            )}
+                </div>
+
+                <form onSubmit={handleChatSubmit}>
+                  <button
+                    type="submit"
+                    onClick={selectedSessionId ? (e) => { e.preventDefault(); handleGeneratePlan(); } : undefined}
+                    disabled={planState === "loading"}
+                    style={{
+                      width: "100%", padding: "12px",
+                      background: "var(--cream)", color: "#0a0a0c",
+                      fontSize: 11, fontFamily: "var(--font-mono)", letterSpacing: "0.1em", textTransform: "uppercase",
+                      border: "none", cursor: planState === "loading" ? "not-allowed" : "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                      opacity: planState === "loading" ? 0.6 : 1,
+                    }}
+                  >
+                    {planState === "loading" ? "Generating…" : "Generate plan →"}
+                    <span style={{ fontSize: 9, opacity: 0.5 }}>/plan</span>
+                  </button>
+                </form>
+              </div>
+
+              {planState === "success" && studyPlan && (
+                <div style={{ borderTop: "1px solid var(--border)", padding: "16px 20px" }}>
+                  <div className="sect-num" style={{ marginBottom: 10 }}>§ GENERATED PLAN</div>
+                  <div
+                    className="prose-chat"
+                    dangerouslySetInnerHTML={{ __html: renderWithLatex(studyPlan) }}
+                    style={{ fontSize: 13 }}
+                  />
+                </div>
+              )}
+            </div>
           </div>
-        </section>
+
+          {/* Memory Profile */}
+          <div style={{ border: "1px solid var(--border-strong)", marginBottom: 28 }}>
+            <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+              <span className="sect-num">§ MEMORY PROFILE</span>
+              <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>
+                what Athena remembers about how you learn
+              </span>
+              <span className="sect-num" style={{ marginLeft: "auto", fontSize: 9 }}>UPDATED THIS SESSION</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)" }}>
+              {/* Study style */}
+              <div style={{ padding: "18px 20px", borderRight: "1px solid var(--border)", minHeight: 140 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, color: "var(--cream)" }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" /></svg>
+                  <span className="sect-num" style={{ fontSize: 10, color: "var(--cream)" }}>STUDY STYLE</span>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {filteredPreferences.length > 0 ? filteredPreferences.slice(0, 4).map((p, i) => (
+                    <span key={i} style={{ fontSize: 11, padding: "4px 9px", border: "1px solid var(--cream-ghost)", color: "var(--cream-dim)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>
+                      {p.slice(0, 50)}{p.length > 50 ? "…" : ""}
+                    </span>
+                  )) : (
+                    <span style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>Still learning…</span>
+                  )}
+                </div>
+              </div>
+              {/* Weak areas */}
+              <div style={{ padding: "18px 20px", borderRight: "1px solid var(--border)", minHeight: 140 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, color: "var(--cream)" }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  <span className="sect-num" style={{ fontSize: 10, color: "var(--cream)" }}>WEAK AREAS</span>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {filteredWeakSubjects.length > 0 ? filteredWeakSubjects.slice(0, 4).map((s, i) => (
+                    <span key={i} style={{ fontSize: 11, padding: "4px 9px", border: "1px solid var(--cream)", color: "var(--cream)", fontFamily: "var(--font-head)" }}>
+                      {s.slice(0, 40)}{s.length > 40 ? "…" : ""}
+                    </span>
+                  )) : (
+                    <span style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>None flagged yet</span>
+                  )}
+                </div>
+              </div>
+              {/* Recent topics */}
+              <div style={{ padding: "18px 20px", borderRight: "1px solid var(--border)", minHeight: 140 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, color: "var(--cream)" }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+                  <span className="sect-num" style={{ fontSize: 10, color: "var(--cream)" }}>RECENT TOPICS</span>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {filteredTopics.length > 0 ? filteredTopics.map((t, i) => (
+                    <span key={i} style={{ fontSize: 11, padding: "4px 9px", border: "1px solid var(--cream-ghost)", color: "var(--cream-dim)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>
+                      {t.slice(0, 40)}{t.length > 40 ? "…" : ""}
+                    </span>
+                  )) : (
+                    <span style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>No topics yet</span>
+                  )}
+                </div>
+              </div>
+              {/* Sessions */}
+              <div style={{ padding: "18px 20px", minHeight: 140 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, color: "var(--cream)" }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  <span className="sect-num" style={{ fontSize: 10, color: "var(--cream)" }}>SESSIONS</span>
+                </div>
+                <div>
+                  <div style={{ fontSize: 32, fontFamily: "var(--font-head)", fontStyle: "italic", color: "var(--cream)", lineHeight: 1, marginBottom: 6 }}>
+                    {sessions.length}
+                  </div>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                    total chats
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick tiles */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderTop: "1px solid var(--border)", marginBottom: 28 }}>
+            {[
+              { label: "Chat", sub: `${sessions.length} sessions`, agent: "Advisor", href: "/chat",
+                icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> },
+              { label: "Notes", sub: "summarize files", agent: "Summarizer", href: "/notes",
+                icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
+              { label: "Flashcards", sub: "coming soon", agent: "Summarizer", href: null,
+                icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="6" width="14" height="14" rx="1"/><path d="M7 3h12a2 2 0 0 1 2 2v12"/></svg> },
+              { label: "Study plan", sub: "coming soon", agent: "Planner", href: null,
+                icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="4" width="18" height="18" rx="1"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> },
+            ].map((tile, i) => (
+              <QuickTile
+                key={tile.label}
+                label={tile.label}
+                sub={tile.sub}
+                agent={tile.agent}
+                icon={tile.icon}
+                border={i > 0}
+                onClick={tile.href ? () => router.push(tile.href!) : undefined}
+              />
+            ))}
+          </div>
+
+          {/* Recent Activity + Agents at work */}
+          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 28, marginBottom: 48 }}>
+
+            {/* Recent Activity */}
+            <div style={{ border: "1px solid var(--border-strong)" }}>
+              <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+                <span className="sect-num">§ RECENT ACTIVITY</span>
+                <span className="sect-num" style={{ marginLeft: "auto" }}>LAST SESSION</span>
+              </div>
+              {recentMessages.length === 0 ? (
+                <div style={{ padding: "24px 18px" }}>
+                  <p style={{ fontSize: 13, color: "var(--text-dim)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>
+                    No recent activity yet. Start a chat to see your study history here.
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  {recentMessages.map((msg, i) => (
+                    <div key={i}
+                      onClick={() => recentSession && router.push(`/chat?sid=${recentSession.id}`)}
+                      style={{
+                        display: "grid", gridTemplateColumns: "1fr 60px",
+                        gap: 16, padding: "12px 18px",
+                        borderBottom: i < recentMessages.length - 1 ? "1px solid var(--border)" : "none",
+                        cursor: "pointer", transition: "background .15s", alignItems: "center",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(237,232,220,0.02)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                    >
+                      <div>
+                        <div style={{ fontSize: 13, color: "var(--cream)", fontFamily: "var(--font-head)", marginBottom: 2, letterSpacing: "0.005em" }}>
+                          {msg.content.slice(0, 100)}{msg.content.length > 100 ? "…" : ""}
+                        </div>
+                        {recentSession && (
+                          <div className="sect-num" style={{ fontSize: 9 }}>{recentSession.title.slice(0, 40)}</div>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", letterSpacing: "0.04em", textAlign: "right" }}>
+                        {recentSession ? relativeTime(recentSession.created_at) : ""}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Agents at work */}
+            <div style={{ border: "1px solid var(--border-strong)" }}>
+              <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border)" }}>
+                <span className="sect-num">§ AGENTS · THIS SESSION</span>
+              </div>
+              <div>
+                {[
+                  { agent: "Advisor", pct: 68, stat: "Q&A · conversations" },
+                  { agent: "Summarizer", pct: 42, stat: "docs · cards generated" },
+                  { agent: "Planner", pct: 28, stat: "plans · schedules" },
+                  { agent: "Coordinator", pct: 92, stat: "always routing" },
+                ].map((a, i) => (
+                  <div key={a.agent} style={{ padding: "14px 18px", borderBottom: i < 3 ? "1px solid var(--border)" : "none" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                      <AgentBadge agent={a.agent} />
+                    </div>
+                    <div style={{ height: 2, background: "rgba(237,232,220,0.06)", marginBottom: 6 }}>
+                      <div style={{ width: `${a.pct}%`, height: "100%", background: "var(--cream)" }} />
+                    </div>
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", letterSpacing: "0.04em" }}>
+                      {a.stat}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Footer colophon */}
+          <div style={{ paddingTop: 16, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between" }}>
+            <span className="sect-num">{sessions.length} SESSIONS · YOUR STUDY SPACE</span>
+            <span className="sect-num">STREAK — KEEP GOING</span>
+            <span className="sect-num">ATHENA · MMXXVI</span>
+          </div>
+
+        </div>
       </div>
     </DashboardLayout>
+  );
+}
+
+function QuickTile({
+  label, sub, agent, icon, border, onClick,
+}: {
+  label: string;
+  sub: string;
+  agent: string;
+  icon: React.ReactNode;
+  border?: boolean;
+  onClick?: () => void;
+}) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        padding: "22px 20px 20px",
+        borderRight: "1px solid var(--border)",
+        borderBottom: "1px solid var(--border)",
+        borderLeft: border ? undefined : "none",
+        background: hover && onClick ? "rgba(237,232,220,0.03)" : "transparent",
+        cursor: onClick ? "pointer" : "default",
+        transition: "all .18s",
+        position: "relative", minHeight: 120,
+        display: "flex", flexDirection: "column", justifyContent: "space-between",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ color: "var(--cream)" }}>{icon}</div>
+        <AgentBadge agent={agent} />
+      </div>
+      <div>
+        <div style={{ fontSize: 26, fontFamily: "var(--font-head)", fontStyle: "italic", color: "var(--cream)", letterSpacing: "-0.005em", marginBottom: 4, lineHeight: 1 }}>
+          {label}
+        </div>
+        <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+          {sub}
+        </div>
+      </div>
+      {onClick && (
+        <div style={{ position: "absolute", bottom: 10, right: 10, fontSize: 11, color: hover ? "var(--cream)" : "var(--text-dim)", transition: "color .15s" }}>→</div>
+      )}
+    </div>
   );
 }

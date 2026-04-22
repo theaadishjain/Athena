@@ -47,3 +47,13 @@ graphify/
 graphify-out/
 .graphify*
 
+# Stray lock files at repo root
+package-lock.json
+yarn.lock
+
+# Clerk keyless cache
+.clerk/
+
+# Temp files
+test_doc.txt
+

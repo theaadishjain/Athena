@@ -23,7 +23,7 @@ export default function ChatPage() {
     <Suspense
       fallback={
         <DashboardLayout>
-          <div className="flex min-h-screen items-center justify-center">
+          <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center" }}>
             <LoadingSpinner size="lg" label="Loading chat…" />
           </div>
         </DashboardLayout>
@@ -42,27 +42,24 @@ function ChatPageContent() {
   const [loadingState, setLoadingState] = useState<LoadingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [showSlash, setShowSlash] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  // Ref to hold a pending auto-send query (avoids stale closure)
   const pendingQueryRef = useRef<string | null>(null);
   const session = useSession();
   const { getToken } = useAuth();
   const { user } = useUser();
 
+  useEffect(() => {
+    setShowSlash(input.startsWith("/"));
+  }, [input]);
+
   // ── On mount / URL change: load session ─────────────────
   useEffect(() => {
     let cancelled = false;
-
-    // Check URL params
     const sidParam = searchParams.get("sid");
     const newParam = searchParams.get("new");
 
-    console.log("[MOUNT] searchParams:", searchParams.toString());
-    console.log("[MOUNT] sid param:", sidParam);
-    console.log("[MOUNT] new param:", newParam);
-
-    // ?new= means New Chat was clicked — clear everything, do not load
     if (newParam) {
       if (!cancelled) {
         setMessages([]);
@@ -74,11 +71,9 @@ function ChatPageContent() {
       return;
     }
 
-    // Determine which session to load
     const storedId = sessionStorage.getItem("athena_current_session");
     const targetId = sidParam || storedId;
 
-    // Check for pending query from dashboard handoff
     const pending = sessionStorage.getItem("athena_pending_query");
     if (pending) {
       sessionStorage.removeItem("athena_pending_query");
@@ -89,27 +84,18 @@ function ChatPageContent() {
       try {
         const token = await getToken();
         if (!token || cancelled) return;
-
         if (targetId) {
-          // Persist the chosen session to storage
           setCurrentSession(targetId);
           setCurrentSessionId(targetId);
           try {
             const msgs = await getSessionMessages(targetId, token);
             if (!cancelled) setMessages(msgs);
           } catch {
-            // Session expired or deleted — fall through to fresh start
-            if (!cancelled) {
-              resetCurrentSession();
-              setCurrentSessionId(null);
-            }
+            if (!cancelled) { resetCurrentSession(); setCurrentSessionId(null); }
           }
         } else {
-          // No session — lazy creation on first message
           if (!cancelled) setCurrentSessionId(null);
         }
-
-        // Fire pending query after session is resolved
         if (!cancelled && pendingQueryRef.current) {
           const q = pendingQueryRef.current;
           pendingQueryRef.current = null;
@@ -122,73 +108,41 @@ function ChatPageContent() {
 
     initSession();
     return () => { cancelled = true; };
-  // Re-run when searchParams changes (sidebar ?sid= or New Chat ?new=)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  useEffect(() => { inputRef.current?.focus(); }, []);
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  // ── New Chat ─────────────────────────────────────────────
   const handleNewChat = useCallback(() => {
-    console.log("[NEW CHAT] clicked");
     resetCurrentSession();
     setMessages([]);
     setLoadingState("idle");
     setError(null);
     setCurrentSessionId(null);
-    const newUrl = "/chat?new=" + Date.now();
-    console.log("[NEW CHAT] pushing url:", newUrl);
-    router.push(newUrl);
+    router.push("/chat?new=" + Date.now());
   }, [router]);
 
-  // ── Export chat as Markdown ───────────────────────────────
   const exportChatAsMarkdown = useCallback(() => {
-    const lines: string[] = [];
-    lines.push(`# Athena Chat`);
-    lines.push(`*Exported from Athena — ${new Date().toLocaleDateString()}*`);
-    lines.push("");
+    const lines: string[] = ["# Athena Chat", `*Exported — ${new Date().toLocaleDateString()}*`, ""];
     messages.forEach((msg) => {
-      if (msg.role === "user") {
-        lines.push(`**You:** ${msg.content}`);
-      } else {
-        lines.push(`**Athena:** ${msg.content}`);
-        if (msg.agent) {
-          lines.push(`*Agent: ${msg.agent}*`);
-        }
-      }
+      lines.push(msg.role === "user" ? `**You:** ${msg.content}` : `**Athena:** ${msg.content}`);
+      if (msg.agent) lines.push(`*Agent: ${msg.agent}*`);
       lines.push("");
     });
     const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = `athena-chat-${Date.now()}.md`;
-    a.click();
+    a.href = url; a.download = `athena-chat-${Date.now()}.md`; a.click();
     URL.revokeObjectURL(url);
   }, [messages]);
 
-  // ── Send message ─────────────────────────────────────────
   const handleSend = useCallback(async (overrideInput?: string) => {
     const trimmed = (overrideInput ?? input).trim();
     if (!trimmed || loadingState === "loading") return;
 
-    const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: trimmed,
-    };
-
-    const assistantMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: "",
-    };
+    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", content: trimmed };
+    const assistantMessage: ChatMessage = { id: crypto.randomUUID(), role: "assistant", content: "" };
 
     setMessages((prev) => [...prev, userMessage, assistantMessage]);
     setInput("");
@@ -199,7 +153,6 @@ function ChatPageContent() {
     let finalAgent = "";
     let activeSessionId = currentSessionId;
 
-    // Lazy session creation on first message
     if (!activeSessionId) {
       try {
         const token = await getToken();
@@ -216,19 +169,13 @@ function ChatPageContent() {
     }
 
     await sendChatMessageStream(
-      {
-        session_id: activeSessionId as string,
-        input: trimmed,
-      },
+      { session_id: activeSessionId as string, input: trimmed },
       await getToken() as string,
       (token) => {
         finalContent += token;
         setMessages((prev) => {
           const updated = [...prev];
-          updated[updated.length - 1] = {
-            ...updated[updated.length - 1],
-            content: updated[updated.length - 1].content + token,
-          };
+          updated[updated.length - 1] = { ...updated[updated.length - 1], content: updated[updated.length - 1].content + token };
           return updated;
         });
       },
@@ -236,85 +183,120 @@ function ChatPageContent() {
         finalAgent = meta.agent;
         setMessages((prev) => {
           const updated = [...prev];
-          updated[updated.length - 1] = {
-            ...updated[updated.length - 1],
-            agent: meta.agent,
-            flashcards: meta.flashcards,
-          };
+          updated[updated.length - 1] = { ...updated[updated.length - 1], agent: meta.agent, flashcards: meta.flashcards };
           return updated;
         });
         setLoadingState("success");
-
-        // Fire-and-forget: persist messages to backend
         getToken().then((tok) => {
           if (!tok || !activeSessionId) return;
-          saveMessage(activeSessionId, { role: "user", content: trimmed }, tok)
-            .catch(() => {});
-          saveMessage(
-            activeSessionId,
-            { role: "assistant", content: finalContent, agent: finalAgent },
-            tok
-          ).catch(() => {});
+          saveMessage(activeSessionId, { role: "user", content: trimmed }, tok).catch(() => {});
+          saveMessage(activeSessionId, { role: "assistant", content: finalContent, agent: finalAgent }, tok).catch(() => {});
         });
       },
-      (errorMessage) => {
-        setError(errorMessage);
-        setLoadingState("error");
-      }
+      (errorMessage) => { setError(errorMessage); setLoadingState("error"); }
     );
   }, [input, loadingState, session, currentSessionId, getToken]);
 
-  // Keep a stable ref to handleSend for use in the mount effect pending query
   const handleSendRef = useRef(handleSend);
   useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        handleSend();
-      }
-    },
-    [handleSend]
-  );
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+  }, [handleSend]);
+
+  const slashCommands = [
+    { cmd: "/plan", desc: "Generate a study plan for an upcoming exam" },
+    { cmd: "/summarize", desc: "Summarize a PDF, link, or pasted text" },
+    { cmd: "/flashcards", desc: "Create spaced-repetition cards from notes" },
+    { cmd: "/quiz", desc: "Quiz me on topics I'm weak at" },
+    { cmd: "/explain", desc: "Explain a concept step-by-step" },
+    { cmd: "/solve", desc: "Work through a problem together" },
+  ];
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col h-screen">
-        {/* Header with New Chat + Export buttons */}
-        <div
-          className="fixed top-0 right-0 z-30 flex items-center gap-2 justify-end px-6 py-3"
-          style={{ left: "240px" }}
-        >
-          {messages.length > 0 && (
+      <div style={{ display: "flex", flexDirection: "column", height: "100vh", position: "relative" }}>
+
+        {/* Chat Header */}
+        <header style={{
+          padding: "14px 28px",
+          borderBottom: "1px solid var(--border)",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          background: "rgba(10,10,12,0.7)",
+          backdropFilter: "blur(8px)",
+          position: "sticky", top: 0, zIndex: 30,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <span className="sect-num">§ SESSION</span>
+            <h2 style={{ fontSize: 17, fontFamily: "var(--font-head)", fontStyle: "italic", fontWeight: 400, color: "var(--cream)", letterSpacing: "0.005em", margin: 0 }}>
+              {messages.length > 0 ? "Conversation" : "New chat"}
+            </h2>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="sect-num">{messages.length} MESSAGES</span>
+            {messages.length > 0 && (
+              <button
+                id="export-chat-btn"
+                onClick={exportChatAsMarkdown}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  padding: "6px 12px", fontSize: 10,
+                  color: "var(--text-muted)", background: "transparent",
+                  border: "1px solid var(--border)", cursor: "pointer",
+                  fontFamily: "var(--font-mono)", letterSpacing: "0.06em", textTransform: "uppercase",
+                  transition: "all .15s",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--cream)"; e.currentTarget.style.borderColor = "var(--border-strong)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Export
+              </button>
+            )}
             <button
-              id="export-chat-btn"
-              onClick={exportChatAsMarkdown}
-              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-muted hover:text-foreground hover:bg-white/[0.04] transition-all border border-transparent hover:border-border"
+              id="new-chat-btn"
+              onClick={handleNewChat}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "6px 12px", fontSize: 10,
+                color: "var(--text-muted)", background: "transparent",
+                border: "1px solid var(--border)", cursor: "pointer",
+                fontFamily: "var(--font-mono)", letterSpacing: "0.06em", textTransform: "uppercase",
+                transition: "all .15s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--cream)"; e.currentTarget.style.borderColor = "var(--border-strong)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}
             >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
               </svg>
-              Export
+              New
             </button>
-          )}
-          <button
-            id="new-chat-btn"
-            onClick={handleNewChat}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-muted hover:text-foreground hover:bg-white/[0.04] transition-all border border-transparent hover:border-border"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            New Chat
-          </button>
-        </div>
+          </div>
+        </header>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto pb-32 px-6 pt-14">
-          <div className="mx-auto max-w-2xl space-y-5">
+        <div style={{ flex: 1, overflowY: "auto", padding: "28px 28px 120px" }}>
+          <div style={{ maxWidth: 820, margin: "0 auto", display: "flex", flexDirection: "column", gap: 24 }}>
+
+            {/* Date divider */}
+            {messages.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                <span className="sect-num">TODAY</span>
+                <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+              </div>
+            )}
+
             {messages.map((msg) => (
-              <ChatBubble key={msg.id} message={msg} userInitial={user?.firstName?.[0]?.toUpperCase() ?? user?.emailAddresses?.[0]?.emailAddress?.[0]?.toUpperCase() ?? "U"} />
+              <ChatBubble key={msg.id} message={msg}
+                userInitial={user?.firstName?.[0]?.toUpperCase() ?? user?.emailAddresses?.[0]?.emailAddress?.[0]?.toUpperCase() ?? "U"}
+              />
             ))}
 
             {error && <ErrorBanner message={error} onRetry={() => setError(null)} />}
@@ -322,65 +304,124 @@ function ChatPageContent() {
           </div>
         </div>
 
-        {/* Welcome Message — shows only when empty */}
+        {/* Welcome state */}
         {messages.length === 0 && loadingState !== "loading" && (
-          <div className="mx-auto max-w-2xl w-full px-6 mb-24">
-            <div className="flex flex-col gap-4 animate-fade-in">
-              <div className="surface-card rounded-xl px-6 py-5 max-w-[90%]">
-                <h1 className="text-[15px] font-medium text-foreground mb-2">
-                  Hi! I'm Athena, your AI study assistant.
-                </h1>
-                <p className="text-sm text-muted leading-relaxed mb-3">
-                  Here's what I can help you with:
-                </p>
-                <ul className="text-sm text-muted space-y-2.5 list-disc pl-5">
-                  <li>Create a study plan for your upcoming exams</li>
-                  <li>Summarize your lecture notes or PDFs</li>
-                  <li>Explain any concept in detail with examples</li>
-                  <li>Generate flashcards to memorize key topics</li>
-                  <li>Quiz you on any subject with instant feedback</li>
-                </ul>
-                <p className="text-[12px] text-muted/60 mt-5 italic">
-                  Upload a file with the notes button, or just start typing.
-                </p>
-              </div>
-            </div>
+          <div style={{
+            position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+            maxWidth: 560, width: "100%", padding: "0 28px",
+            textAlign: "center", pointerEvents: "none",
+          }}>
+            <div className="glow-radial" style={{
+              width: 600, height: 600, top: -200, left: "50%", transform: "translateX(-50%)",
+              background: "radial-gradient(circle, rgba(237,232,220,0.04), transparent 70%)",
+            }} />
+            <h1 style={{
+              fontSize: 64, lineHeight: 0.95,
+              fontFamily: "var(--font-head)", fontWeight: 400,
+              letterSpacing: "-0.02em", color: "var(--cream)",
+              marginBottom: 16,
+            }}>
+              What are<br />
+              <em style={{ fontFamily: "var(--font-head)", fontStyle: "italic" }}>we studying</em><br />
+              today?
+            </h1>
+            <p style={{ fontSize: 15, color: "var(--cream-dim)", lineHeight: 1.5, fontWeight: 300 }}>
+              Type a question, or use <span className="kbd" style={{ pointerEvents: "all" }}>/</span> for commands like <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>/plan</span>, <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>/summarize</span>, or <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>/flashcards</span>.
+            </p>
           </div>
         )}
 
-        {/* Input */}
-        <div
-          className="fixed bottom-0 right-0 z-40 border-t border-border bg-background/80 backdrop-blur-xl"
-          style={{ left: "220px" }}
-        >
-          <div className="mx-auto max-w-2xl px-6 py-3">
-            <div className="surface-card rounded-xl p-1 flex items-end gap-2">
+        {/* Composer */}
+        <div style={{
+          position: "sticky", bottom: 0,
+          padding: "16px 28px 24px",
+          borderTop: "1px solid var(--border)",
+          background: "rgba(10,10,12,0.85)",
+          backdropFilter: "blur(8px)",
+          zIndex: 40,
+        }}>
+          <div style={{ maxWidth: 820, margin: "0 auto", position: "relative" }}>
+            {/* Slash commands popup */}
+            {showSlash && (
+              <div style={{
+                position: "absolute", bottom: "calc(100% + 10px)", left: 0, right: 0,
+                background: "var(--surface-2)", border: "1px solid var(--border-strong)",
+                padding: 6, boxShadow: "0 16px 48px -8px rgba(0,0,0,0.7)", zIndex: 10,
+              }}>
+                <div style={{ padding: "8px 12px", display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--border)" }}>
+                  <span className="sect-num">§ COMMANDS</span>
+                  <span className="sect-num">↑↓ NAV · ↵ SELECT</span>
+                </div>
+                {slashCommands.map((s, i) => (
+                  <div key={s.cmd}
+                    onClick={() => { setInput(s.cmd + " "); setShowSlash(false); inputRef.current?.focus(); }}
+                    style={{
+                      padding: "9px 12px", display: "flex", alignItems: "center", gap: 12,
+                      cursor: "pointer",
+                      background: i === 0 ? "rgba(237,232,220,0.05)" : "transparent",
+                      borderLeft: i === 0 ? "1.5px solid var(--cream)" : "1.5px solid transparent",
+                      transition: "all .12s",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(237,232,220,0.05)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = i === 0 ? "rgba(237,232,220,0.05)" : "transparent"; }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 12, color: "var(--cream)", fontFamily: "var(--font-mono)", fontWeight: 500, letterSpacing: "0.02em" }}>{s.cmd}</div>
+                      <div style={{ fontSize: 10.5, color: "var(--text-muted)", fontFamily: "var(--font-head)", fontStyle: "italic", marginTop: 2 }}>{s.desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{
+              background: "rgba(237,232,220,0.02)", border: "1px solid var(--border-strong)", padding: 4,
+            }}>
               <textarea
                 ref={inputRef}
                 id="chat-input"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Type a message…"
+                placeholder="Ask Athena anything…"
                 rows={1}
                 disabled={loadingState === "loading"}
-                className="flex-1 resize-none bg-transparent px-3 py-2.5 text-[13px] text-foreground placeholder:text-muted/40 focus:outline-none disabled:opacity-50 max-h-28 overflow-y-auto"
-                style={{ minHeight: "40px" }}
+                style={{
+                  width: "100%", background: "transparent", border: "none", outline: "none",
+                  padding: "14px 14px 6px", fontSize: 14, color: "var(--text)", resize: "none",
+                  minHeight: 48, fontFamily: "var(--font-head)", lineHeight: 1.5,
+                  fontStyle: input ? "normal" : "italic",
+                }}
               />
-              <button
-                id="chat-send"
-                onClick={() => handleSend()}
-                disabled={loadingState === "loading" || !input.trim()}
-                className="shrink-0 rounded-lg bg-primary p-2.5 text-white transition-all hover:bg-primary-dark disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                {loadingState === "loading" ? (
-                  <LoadingSpinner size="sm" />
-                ) : (
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.27 3.126A59.768 59.768 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.876L5.999 12Zm0 0h7.5" />
-                  </svg>
-                )}
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 6px 6px" }}>
+                <span className="sect-num" style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
+                  <span className="kbd">/</span> CMDS
+                  <span style={{ margin: "0 3px" }}>·</span>
+                  <span className="kbd">⇧</span><span className="kbd">↵</span> NL
+                </span>
+                <button
+                  id="chat-send"
+                  onClick={() => handleSend()}
+                  disabled={loadingState === "loading" || !input.trim()}
+                  style={{
+                    width: 32, height: 32,
+                    background: input.trim() ? "var(--cream)" : "rgba(237,232,220,0.05)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: input.trim() ? "#0a0a0c" : "var(--text-dim)",
+                    transition: "all .15s", border: "none", cursor: "pointer",
+                    opacity: loadingState === "loading" ? 0.5 : 1,
+                  }}
+                >
+                  {loadingState === "loading" ? (
+                    <LoadingSpinner size="sm" />
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="5" y1="12" x2="19" y2="12"/>
+                      <polyline points="12 5 19 12 12 19"/>
+                    </svg>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -393,46 +434,71 @@ function ChatBubble({ message, userInitial }: { message: ChatMessage; userInitia
   const isUser = message.role === "user";
   const isTyping = !isUser && !message.content;
 
-  return (
-    <div className={`flex items-start gap-3 animate-fade-in ${isUser ? "flex-row-reverse" : ""}`}>
-      <div
-        className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 text-[10px] font-bold ${
-          isUser
-            ? "bg-white/[0.06] text-muted"
-            : "bg-primary/8 text-primary"
-        }`}
-      >
-        {isUser ? userInitial : "AI"}
+  if (isUser) {
+    return (
+      <div style={{ display: "flex", justifyContent: "flex-end" }} className="animate-fade-in">
+        <div style={{
+          maxWidth: "72%", padding: "12px 16px",
+          background: "var(--cream)", color: "#0a0a0c",
+          fontSize: 14, lineHeight: 1.5, letterSpacing: "-0.005em",
+        }}>
+          {message.content}
+        </div>
       </div>
+    );
+  }
 
-      <div className={`max-w-[80%] ${isUser ? "items-end" : "items-start"} flex flex-col gap-1`}>
-        {!isUser && message.agent && <AgentBadge agent={message.agent} />}
-        <div
-          className={`rounded-xl px-4 py-3 ${
-            isUser
-              ? "bg-white/[0.06] border border-white/[0.06]"
-              : "surface-card"
-          }`}
-        >
-          {isTyping ? (
-            <div className="flex items-center gap-1.5 h-5">
-              <span className="h-1.5 w-1.5 rounded-full bg-muted/60 animate-bounce [animation-delay:0ms]" />
-              <span className="h-1.5 w-1.5 rounded-full bg-muted/60 animate-bounce [animation-delay:150ms]" />
-              <span className="h-1.5 w-1.5 rounded-full bg-muted/60 animate-bounce [animation-delay:300ms]" />
-            </div>
-          ) : isUser ? (
-            <p className="text-[13px] leading-[1.7] whitespace-pre-wrap text-foreground/85">
-              {message.content}
-            </p>
-          ) : (
-            <div
-              className="prose-chat prose-invert"
-              dangerouslySetInnerHTML={{
-                __html: renderWithLatex(message.content),
-              }}
-            />
+  return (
+    <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }} className="animate-fade-in">
+      <div style={{
+        width: 32, height: 32, flexShrink: 0,
+        border: "1px solid var(--cream-ghost)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: "var(--cream)", fontSize: 17,
+        fontFamily: "var(--font-head)", fontStyle: "italic",
+        marginTop: 2,
+      }}>A</div>
+      <div style={{ flex: 1, minWidth: 0, maxWidth: "85%" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <span style={{ fontSize: 13, fontWeight: 400, color: "var(--cream)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>Athena</span>
+          {message.agent && <AgentBadge agent={message.agent} />}
+          {isTyping && (
+            <span className="sect-num" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--cream)", animation: "athenaPulse 1.5s infinite" }} />
+              THINKING
+            </span>
           )}
         </div>
+        <div style={{ color: "var(--cream)", fontSize: 14, lineHeight: 1.65, letterSpacing: "-0.005em", fontFamily: "var(--font-head)" }}>
+          {isTyping ? (
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              {[0,1,2].map(i => (
+                <span key={i} style={{ width: 4, height: 4, borderRadius: "50%", background: "rgba(237,232,220,0.5)", animation: `athenaPulse 1.2s infinite ${i * 0.15}s` }} />
+              ))}
+            </div>
+          ) : (
+            <div className="prose-chat" dangerouslySetInnerHTML={{ __html: renderWithLatex(message.content) }} />
+          )}
+        </div>
+        {/* Action row */}
+        {!isTyping && message.content && (
+          <div style={{ display: "flex", gap: 0, marginTop: 10 }}>
+            {["Copy", "Explain more", "Quiz me", "Save"].map((a, i) => (
+              <button key={a} style={{
+                fontSize: 10, color: "var(--text-muted)", padding: `4px ${i === 0 ? "10px 4px 0" : "10px"}`,
+                border: "none", borderRight: i < 3 ? "1px solid var(--border)" : "none",
+                fontFamily: "var(--font-mono)", letterSpacing: "0.06em", textTransform: "uppercase",
+                transition: "color .15s", background: "none", cursor: "pointer",
+              }}
+                onClick={() => {
+                  if (a === "Copy") navigator.clipboard.writeText(message.content);
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--cream)")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}
+              >{a}</button>
+            ))}
+          </div>
+        )}
         {message.flashcards && message.flashcards.length > 0 && (
           <FlashcardDeck flashcards={message.flashcards} />
         )}
