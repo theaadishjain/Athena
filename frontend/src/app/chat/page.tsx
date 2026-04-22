@@ -146,6 +146,32 @@ function ChatPageContent() {
     router.push(newUrl);
   }, [router]);
 
+  // ── Export chat as Markdown ───────────────────────────────
+  const exportChatAsMarkdown = useCallback(() => {
+    const lines: string[] = [];
+    lines.push(`# Athena Chat`);
+    lines.push(`*Exported from Athena — ${new Date().toLocaleDateString()}*`);
+    lines.push("");
+    messages.forEach((msg) => {
+      if (msg.role === "user") {
+        lines.push(`**You:** ${msg.content}`);
+      } else {
+        lines.push(`**Athena:** ${msg.content}`);
+        if (msg.agent) {
+          lines.push(`*Agent: ${msg.agent}*`);
+        }
+      }
+      lines.push("");
+    });
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `athena-chat-${Date.now()}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [messages]);
+
   // ── Send message ─────────────────────────────────────────
   const handleSend = useCallback(async (overrideInput?: string) => {
     const trimmed = (overrideInput ?? input).trim();
@@ -254,11 +280,23 @@ function ChatPageContent() {
   return (
     <DashboardLayout>
       <div className="flex flex-col h-screen">
-        {/* Header with New Chat button */}
+        {/* Header with New Chat + Export buttons */}
         <div
-          className="fixed top-0 right-0 z-30 flex items-center justify-end px-6 py-3"
+          className="fixed top-0 right-0 z-30 flex items-center gap-2 justify-end px-6 py-3"
           style={{ left: "240px" }}
         >
+          {messages.length > 0 && (
+            <button
+              id="export-chat-btn"
+              onClick={exportChatAsMarkdown}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-muted hover:text-foreground hover:bg-white/[0.04] transition-all border border-transparent hover:border-border"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Export
+            </button>
+          )}
           <button
             id="new-chat-btn"
             onClick={handleNewChat}

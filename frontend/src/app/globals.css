@@ -305,3 +305,47 @@ body {
   font-size: 1.1em;
   font-family: inherit;
 }
+
+/* ─── Print styles (PDF export from Notes page) ──────────── */
+
+@media print {
+  body > * {
+    display: none !important;
+  }
+
+  #summary-print-area {
+    display: block !important;
+    font-family: Georgia, serif;
+    font-size: 12pt;
+    line-height: 1.6;
+    padding: 2rem;
+    color: #000;
+    background: #fff;
+    max-width: 100%;
+  }
+
+  #summary-print-area h1 {
+    font-size: 18pt;
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+    color: #000;
+  }
+
+  #summary-print-area p {
+    font-size: 10pt;
+    color: #444;
+    margin: 0.2rem 0;
+  }
+
+  #summary-print-area hr {
+    border: none;
+    border-top: 1px solid #ccc;
+    margin: 1rem 0;
+  }
+
+  #summary-print-area div {
+    font-size: 11pt;
+    color: #111;
+    margin-top: 1rem;
+  }
+}

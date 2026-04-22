@@ -6,9 +6,10 @@ import LoadingSpinner from "@/components/ui/LoadingSpinner";
 import ErrorBanner from "@/components/ui/ErrorBanner";
 import AgentBadge from "@/components/ui/AgentBadge";
 import type { UnifiedResponse, LoadingState } from "@/lib/types";
+import { renderWithLatex } from "@/lib/renderMarkdown";
 import { useAuth } from "@clerk/nextjs";
 import { summarizeFile } from "@/lib/api";
-import { useSession } from "@/lib/session";
+import { useSession, getOrCreateSessionId } from "@/lib/session";
 
 const ACCEPTED_TYPES = ["application/pdf", "text/plain", "text/markdown"];
 const ACCEPTED_EXTENSIONS = [".pdf", ".txt", ".md"];
@@ -28,6 +29,28 @@ export default function NotesPage() {
   const session = useSession();
   const { getToken } = useAuth();
 
+  // ── Export handlers ─────────────────────────────────────
+  const handleExportPDF = useCallback(() => {
+    window.print();
+  }, []);
+
+  const exportSummaryAsMarkdown = useCallback(() => {
+    if (!summary || !file) return;
+    const content = [
+      `# Athena Summary`,
+      `*File: ${file.name}*`,
+      `*Date: ${new Date().toLocaleDateString()}*`,
+      ``,
+      summary.response,
+    ].join("\n");
+    const blob = new Blob([content], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `athena-summary-${Date.now()}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [summary, file]);
   const handleFile = useCallback((selected: File) => {
     if (!isAcceptedFile(selected)) {
       setError("Only .pdf, .txt, and .md files are accepted.");
@@ -66,7 +89,8 @@ export default function NotesPage() {
     try {
       const token = await getToken();
       if (!token) throw new Error("Auth failed");
-      const res = await summarizeFile(file, session.session_id, token);
+      const activeSessionId = getOrCreateSessionId();
+      const res = await summarizeFile(file, activeSessionId, token);
       setSummary(res);
       setLoadingState("success");
     } catch (err) {
@@ -182,6 +206,31 @@ export default function NotesPage() {
               Clear
             </button>
           )}
+
+          {summary && loadingState === "success" && (
+            <>
+              <button
+                id="export-pdf-btn"
+                onClick={handleExportPDF}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3.5 py-2 text-[12px] font-medium text-muted hover:text-foreground hover:bg-white/[0.04] transition-all"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                </svg>
+                Export PDF
+              </button>
+              <button
+                id="export-md-btn"
+                onClick={exportSummaryAsMarkdown}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3.5 py-2 text-[12px] font-medium text-muted hover:text-foreground hover:bg-white/[0.04] transition-all"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                Export MD
+              </button>
+            </>
+          )}
         </div>
 
         {error && (
@@ -216,9 +265,12 @@ export default function NotesPage() {
               </div>
 
               <div className="rounded-lg bg-white/[0.02] p-4">
-                <p className="text-[13px] leading-[1.8] text-foreground/75 whitespace-pre-wrap">
-                  {summary.response}
-                </p>
+                <div
+                  className="prose-chat prose-invert"
+                  dangerouslySetInnerHTML={{
+                    __html: renderWithLatex(summary.response),
+                  }}
+                />
               </div>
 
               {summary.memory_updated && (
@@ -233,6 +285,17 @@ export default function NotesPage() {
           </div>
         )}
       </div>
+
+      {/* Hidden print area — shown only during window.print() */}
+      {summary && (
+        <div id="summary-print-area" className="hidden">
+          <h1>Athena — Document Summary</h1>
+          <p>File: {file?.name}</p>
+          <p>Date: {new Date().toLocaleDateString()}</p>
+          <hr />
+          <div style={{ whiteSpace: "pre-wrap" }}>{summary.response}</div>
+        </div>
+      )}
     </DashboardLayout>
   );
 }
