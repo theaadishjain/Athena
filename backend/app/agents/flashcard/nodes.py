@@ -6,7 +6,7 @@ from app.services.llm import get_llm
 
 class FlashcardNodes:
     def __init__(self, memory_provider: MemoryProvider) -> None:
-        self.llm = get_llm(max_tokens=1500)
+        self.llm = get_llm(max_tokens=3500)
         self.memory_provider = memory_provider
 
     async def generate_flashcards(self, state: AcademicState) -> AcademicState:
@@ -21,9 +21,9 @@ class FlashcardNodes:
         memory_text = "\n".join(state["memory_context"]) if state["memory_context"] else "No memory found."
 
         # Step 2: Call LLM
-        prompt = f"""You are a study assistant. Based on the following input, 
-generate exactly 10 flashcards. Return ONLY a valid JSON 
-array with no markdown, no code blocks, no preamble.
+        prompt = f"""You are a study assistant. Based on the following input, \
+generate exactly the number of flashcards requested (default 10 if not specified). \
+Return ONLY a valid JSON array with no markdown, no code blocks, no preamble.
 Format:
 [
   {{"question": "...", "answer": "..."}},

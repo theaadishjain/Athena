@@ -138,23 +138,61 @@ export default function DashboardPage() {
   }, [sessionsLoaded]);
 
   const handleGeneratePlan = useCallback(async () => {
-    if (!selectedSessionId) return;
+    if (!examTopic.trim() && !selectedSessionId) return;
     setPlanState("loading");
     setPlanError(null);
     setStudyPlan(null);
     try {
       const token = await getToken();
       if (!token) throw new Error("Auth failed");
-      const msgs = await getSessionMessages(selectedSessionId, token);
-      const combined = msgs.map((m) => `${m.role}: ${m.content}`).join("\n");
-      const res = await getStudyPlan({ session_id: selectedSessionId, input: combined }, token);
+
+      // Get selected session title if a session is picked
+      const selectedSession = sessions.find(s => s.id === selectedSessionId);
+      const selectedSessionTitle = selectedSession?.title ?? "";
+
+      // Fetch context messages if a session is selected
+      let sessionContext = "";
+      if (selectedSessionId) {
+        try {
+          const msgs = await getSessionMessages(selectedSessionId, token);
+          const userMsgs = msgs.filter(m => m.role === "user").slice(-5);
+          sessionContext = userMsgs.map(m => m.content).join("; ");
+        } catch { /* use empty context */ }
+      }
+
+      // Build a proper planning prompt
+      const topicLine = examTopic.trim()
+        ? `Create a detailed study schedule and exam preparation plan for: ${examTopic.trim()}.`
+        : `Create a detailed study schedule based on my recent sessions.`;
+
+      const sessionLine = selectedSessionTitle
+        ? `Base this on my previous study session about: "${selectedSessionTitle}".`
+        : "";
+
+      const contextLine = sessionContext
+        ? `Key topics I have already covered: ${sessionContext}.`
+        : "";
+
+      const planInput = [
+        topicLine,
+        sessionLine,
+        contextLine,
+        `Number of study sessions needed: ${sessionCount}.`,
+        "Include: daily topics, time allocation per session, revision strategy, and a final review day.",
+        "Format as a structured schedule with clear day-by-day breakdown.",
+      ].filter(Boolean).join(" ");
+
+      const res = await getStudyPlan(
+        { session_id: selectedSessionId ?? session.session_id, input: planInput },
+        token
+      );
       setStudyPlan(res.response);
       setPlanState("success");
     } catch (err) {
       setPlanError(err instanceof Error ? err.message : "Failed to generate plan");
       setPlanState("error");
     }
-  }, [selectedSessionId, getToken, session.user_id]);
+  }, [examTopic, selectedSessionId, sessionCount, sessions, getToken, session.session_id]);
 
   const handleChatSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -335,7 +373,7 @@ export default function DashboardPage() {
                 <form onSubmit={handleChatSubmit}>
                   <button
                     type="submit"
-                    onClick={selectedSessionId ? (e) => { e.preventDefault(); handleGeneratePlan(); } : undefined}
+                    onClick={selectedSessionId || examTopic.trim() ? (e) => { e.preventDefault(); handleGeneratePlan(); } : undefined}
                     disabled={planState === "loading"}
                     style={{
                       width: "100%", padding: "12px",

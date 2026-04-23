@@ -7,6 +7,10 @@ interface FlashcardDeckProps {
   flashcards: Flashcard[];
 }
 
+const CARD_BORDER = "1px solid rgba(237,232,220,0.15)";
+const CARD_BG = "rgba(237,232,220,0.04)";
+const CARD_BG_ANSWER = "rgba(237,232,220,0.07)";
+
 export default function FlashcardDeck({ flashcards }: FlashcardDeckProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
@@ -18,8 +22,10 @@ export default function FlashcardDeck({ flashcards }: FlashcardDeckProps) {
 
   const handleNext = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setCurrentIndex((prev) => Math.min(prev + 1, flashcards.length));
     setIsFlipped(false);
+    setTimeout(() => {
+      setCurrentIndex((prev) => Math.min(prev + 1, flashcards.length));
+    }, 150);
   };
 
   const handlePrev = (e: React.MouseEvent) => {
@@ -34,78 +40,197 @@ export default function FlashcardDeck({ flashcards }: FlashcardDeckProps) {
 
   if (isDone) {
     return (
-      <div className="surface-card flex flex-col items-center justify-center p-8 mt-4 animate-fade-in max-w-sm shrink-0">
-        <div className="text-4xl mb-4">🎉</div>
-        <h3 className="text-lg font-bold text-foreground">Done!</h3>
+      <div style={{
+        border: CARD_BORDER,
+        background: CARD_BG,
+        padding: "40px 24px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 12,
+        width: "100%",
+        maxWidth: 480,
+      }}>
+        <div style={{ fontSize: 32 }}>🎉</div>
+        <p style={{ fontSize: 14, color: "var(--cream)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>
+          All {flashcards.length} cards reviewed.
+        </p>
         <button
-          onClick={() => {
-            setCurrentIndex(0);
-            setIsFlipped(false);
+          onClick={() => { setCurrentIndex(0); setIsFlipped(false); }}
+          style={{
+            marginTop: 8,
+            padding: "8px 20px",
+            fontSize: 10,
+            fontFamily: "var(--font-mono)",
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            background: "var(--cream)",
+            color: "#0a0a0c",
+            border: "none",
+            cursor: "pointer",
           }}
-          className="mt-6 rounded-full bg-primary/10 px-4 py-2 text-sm font-semibold text-primary transition-all hover:bg-primary/20"
         >
-          Review Again
+          Review again
         </button>
       </div>
     );
   }
 
   return (
-    <div className="mt-4 flex flex-col items-center max-w-sm">
-      {/* 3D Container */}
-      <div className="relative w-full h-48 [perspective:1000px] cursor-pointer group" onClick={() => setIsFlipped(!isFlipped)}>
-        <div
-          className="relative w-full h-full transition-transform duration-500 [transform-style:preserve-3d]"
-          style={{ transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)" }}
-        >
-          {/* Front */}
-          <div className="absolute inset-0 [backface-visibility:hidden]">
-            <div className="h-full w-full rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] p-6 flex flex-col items-center justify-center text-center shadow-sm transition-colors group-hover:border-[var(--color-border-light)]">
-              <span className="absolute top-4 left-4 text-[10px] font-bold text-muted/50 uppercase tracking-widest">Question</span>
-              <p className="text-[15px] font-medium text-foreground leading-relaxed px-4">
-                {currentCard.question}
-              </p>
+    <div style={{ width: "100%", maxWidth: 680, margin: "0 auto" }}>
+
+      {/* Flip container */}
+      <div
+        onClick={() => setIsFlipped((f) => !f)}
+        style={{ perspective: "1000px", width: "100%", cursor: "pointer" }}
+      >
+        {/* Inner rotating div */}
+        <div style={{
+          position: "relative",
+          transformStyle: "preserve-3d",
+          transition: "transform 0.4s ease",
+          transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)",
+          minHeight: 200,
+        }}>
+
+          {/* FRONT — Question */}
+          <div style={{
+            position: "absolute",
+            width: "100%",
+            minHeight: 200,
+            maxHeight: 400,
+            overflowY: "auto",
+            backfaceVisibility: "hidden",
+            WebkitBackfaceVisibility: "hidden",
+            background: CARD_BG,
+            border: CARD_BORDER,
+            padding: "20px 24px",
+            boxSizing: "border-box",
+          }}>
+            <div style={{
+              fontSize: 9,
+              fontFamily: "var(--font-mono)",
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "rgba(237,232,220,0.4)",
+              marginBottom: 12,
+            }}>
+              Question · {currentIndex + 1} / {flashcards.length}
+            </div>
+            <p style={{
+              fontSize: 16,
+              lineHeight: 1.6,
+              color: "var(--cream)",
+              fontFamily: "var(--font-head)",
+              margin: 0,
+            }}>
+              {currentCard.question}
+            </p>
+            <div style={{
+              marginTop: 16,
+              fontSize: 10,
+              color: "rgba(237,232,220,0.25)",
+              fontFamily: "var(--font-mono)",
+              letterSpacing: "0.08em",
+            }}>
+              Click to reveal answer ↗
             </div>
           </div>
 
-          {/* Back */}
-          <div
-            className="absolute inset-0 [backface-visibility:hidden]"
-            style={{ transform: "rotateY(180deg)" }}
-          >
-            <div className="h-full w-full rounded-2xl bg-[var(--color-surface)] border border-primary p-6 flex flex-col items-center justify-center text-center shadow-md">
-              <span className="absolute top-4 left-4 text-[10px] font-bold text-primary/60 uppercase tracking-widest">Answer</span>
-              <p className="text-[15px] text-foreground leading-relaxed px-4">
-                {currentCard.answer}
-              </p>
+          {/* BACK — Answer */}
+          <div style={{
+            position: "absolute",
+            width: "100%",
+            minHeight: 200,
+            maxHeight: 400,
+            overflowY: "auto",
+            backfaceVisibility: "hidden",
+            WebkitBackfaceVisibility: "hidden",
+            transform: "rotateY(180deg)",
+            background: CARD_BG_ANSWER,
+            border: "1px solid rgba(237,232,220,0.25)",
+            padding: "20px 24px",
+            boxSizing: "border-box",
+          }}>
+            <div style={{
+              fontSize: 9,
+              fontFamily: "var(--font-mono)",
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "rgba(237,232,220,0.5)",
+              marginBottom: 12,
+            }}>
+              Answer
             </div>
+            <p style={{
+              fontSize: 14,
+              lineHeight: 1.6,
+              color: "var(--cream-dim)",
+              fontFamily: "var(--font-head)",
+              margin: 0,
+            }}>
+              {currentCard.answer}
+            </p>
           </div>
+
         </div>
+
+        {/* Spacer — keeps nav below absolute-positioned faces */}
+        <div style={{ minHeight: 200 }} />
       </div>
 
-      {/* Controls */}
-      <div className="w-full flex items-center justify-between mt-4 px-2">
+      {/* Navigation */}
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginTop: 12,
+        paddingTop: 12,
+        borderTop: "1px solid var(--border)",
+      }}>
         <button
           onClick={handlePrev}
           disabled={currentIndex === 0}
-          className="p-2 text-muted hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          style={{
+            background: "transparent",
+            border: "none",
+            cursor: currentIndex === 0 ? "not-allowed" : "pointer",
+            opacity: currentIndex === 0 ? 0.25 : 1,
+            color: "var(--cream)",
+            padding: "6px 10px",
+            fontSize: 16,
+            lineHeight: 1,
+            transition: "opacity .15s",
+          }}
+          aria-label="Previous card"
         >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-          </svg>
+          ←
         </button>
 
-        <span className="text-[12px] font-medium text-muted/70">
-          Card {currentIndex + 1} of {flashcards.length}
+        <span style={{
+          fontSize: 11,
+          fontFamily: "var(--font-mono)",
+          color: "var(--text-dim)",
+          letterSpacing: "0.06em",
+        }}>
+          {currentIndex + 1} / {flashcards.length}
         </span>
 
         <button
           onClick={handleNext}
-          className="p-2 text-primary hover:text-primary-light transition-colors"
+          style={{
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--cream)",
+            padding: "6px 10px",
+            fontSize: 16,
+            lineHeight: 1,
+            transition: "opacity .15s",
+          }}
+          aria-label="Next card"
         >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-          </svg>
+          →
         </button>
       </div>
     </div>

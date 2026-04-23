@@ -38,3 +38,4 @@ app.include_router(sessions_router)
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
+

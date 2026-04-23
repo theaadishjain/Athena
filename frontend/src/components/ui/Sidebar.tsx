@@ -39,10 +39,8 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
-];
-
-const SOON_ITEMS = [
   {
+    href: "/flashcards",
     label: "Flashcards",
     icon: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -51,6 +49,9 @@ const SOON_ITEMS = [
       </svg>
     ),
   },
+];
+
+const SOON_ITEMS = [
   {
     label: "Study plan",
     icon: (
@@ -85,6 +86,8 @@ export default function Sidebar() {
   const { getToken } = useAuth();
   const [sessions, setSessions] = useState<ChatSessionMeta[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   useEffect(() => {
     const id = sessionStorage.getItem("athena_current_session") ||
@@ -136,6 +139,7 @@ export default function Sidebar() {
   const handleDeleteSession = async (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
     e.preventDefault();
+    setDeletingId(sessionId);
     try {
       const token = await getToken();
       if (!token) return;
@@ -146,7 +150,11 @@ export default function Sidebar() {
         sessionStorage.removeItem("athena_current_session");
         router.push("/chat?new=" + Date.now());
       }
-    } catch { /* silent */ }
+    } catch (err) {
+      console.error("[DELETE] failed:", err);
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const userInitial = user?.firstName?.[0]?.toUpperCase() ??
@@ -280,12 +288,13 @@ export default function Sidebar() {
             const isActive = s.id === activeSessionId && pathname === "/chat";
             return (
               <div key={s.id}
-                onClick={() => handleSessionClick(s)}
-                className="group"
+                onClick={deletingId ? undefined : () => handleSessionClick(s)}
+                onMouseEnter={() => setHoveredId(s.id)}
+                onMouseLeave={() => setHoveredId(null)}
                 style={{
                   padding: "7px 12px",
                   fontSize: 12,
-                  cursor: "pointer",
+                  cursor: deletingId ? "default" : "pointer",
                   background: isActive ? "rgba(237,232,220,0.05)" : "transparent",
                   borderLeft: isActive ? "1.5px solid var(--cream)" : "1.5px solid transparent",
                   color: isActive ? "var(--cream)" : "var(--text-muted)",
@@ -310,16 +319,21 @@ export default function Sidebar() {
                   style={{
                     position: "absolute",
                     right: 6,
-                    opacity: 0,
-                    fontSize: 10,
-                    color: "var(--text-dim)",
+                    opacity: hoveredId === s.id || deletingId === s.id ? 1 : 0,
+                    fontSize: 13,
+                    color: "rgba(237,232,220,0.5)",
                     cursor: "pointer",
-                    padding: "2px 4px",
+                    padding: "2px 5px",
                     transition: "opacity .15s",
+                    lineHeight: 1,
+                    userSelect: "none",
                   }}
-                  className="group-hover:opacity-100"
                 >
-                  ×
+                  {deletingId === s.id ? (
+                    <span style={{ fontSize: "10px", color: "var(--text-dim)" }}>…</span>
+                  ) : (
+                    <span>×</span>
+                  )}
                 </span>
               </div>
             );
