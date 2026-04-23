@@ -224,18 +224,28 @@ export default function LandingPage() {
                 }}>{item}</button>
             ))}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <button
-              className="btn btn-tertiary"
-              style={{ fontSize: 12, fontFamily: "var(--font-mono)", letterSpacing: "0.04em", textTransform: "uppercase" }}
-              onClick={() => router.push("/sign-in")}
-            >Sign in</button>
-            <button
-              className="btn btn-primary"
-              style={{ fontSize: 12, padding: "10px 18px", fontFamily: "var(--font-mono)", letterSpacing: "0.04em", textTransform: "uppercase" }}
-              onClick={() => handleCta("/dashboard")}
-            >Enroll —</button>
-          </div>
+          {isSignedIn ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <button
+                className="btn btn-primary"
+                style={{ fontSize: 12, padding: "10px 18px", fontFamily: "var(--font-mono)", letterSpacing: "0.04em", textTransform: "uppercase" }}
+                onClick={() => router.push("/dashboard")}
+              >Dashboard →</button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <button
+                className="btn btn-tertiary"
+                style={{ fontSize: 12, fontFamily: "var(--font-mono)", letterSpacing: "0.04em", textTransform: "uppercase" }}
+                onClick={() => router.push("/sign-in")}
+              >Sign in</button>
+              <button
+                className="btn btn-primary"
+                style={{ fontSize: 12, padding: "10px 18px", fontFamily: "var(--font-mono)", letterSpacing: "0.04em", textTransform: "uppercase" }}
+                onClick={() => router.push("/sign-up")}
+              >Enroll —</button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -293,12 +303,12 @@ export default function LandingPage() {
               <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                 <button
                   className="btn btn-primary"
-                  onClick={() => handleCta("/dashboard")}
+                  onClick={() => isSignedIn ? router.push("/dashboard") : router.push("/sign-up")}
                   style={{ fontSize: 12, padding: "14px 22px", fontFamily: "var(--font-mono)", letterSpacing: "0.06em", textTransform: "uppercase" }}
                 >Begin — free for students</button>
                 <button
                   className="btn btn-ghost"
-                  onClick={() => handleCta("/chat")}
+                  onClick={() => isSignedIn ? router.push("/chat") : router.push("/sign-in")}
                   style={{ fontSize: 12, padding: "14px 18px", fontFamily: "var(--font-mono)", letterSpacing: "0.06em", textTransform: "uppercase" }}
                 >Demo · Chat</button>
               </div>

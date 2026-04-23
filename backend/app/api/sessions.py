@@ -215,7 +215,6 @@ async def delete_session(
     user_id: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    print(f"[DELETE] session_id={session_id} user_id={user_id}")
     # Verify session belongs to this user
     result = await db.execute(
         select(ChatSession).where(

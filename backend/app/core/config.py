@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     cors_origins: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
     database_url: str = Field(default="sqlite+aiosqlite:///./studyco.db", alias="DATABASE_URL")
     clerk_secret_key: str = Field(default="", alias="CLERK_SECRET_KEY")
+    app_url: str = Field(default="http://localhost:3000", alias="APP_URL")
 
     @property
     def cors_origin_list(self) -> List[str]:

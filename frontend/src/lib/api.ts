@@ -173,7 +173,6 @@ export async function getMemories(
 ): Promise<MemoryEntry[]> {
   const memoryType = params.memory_type || "general";
   const url = new URL(`${BASE_URL}/memory`);
-  url.searchParams.set("user_id", params.user_id ?? "");
   url.searchParams.set("memory_type", memoryType);
   if (params.k !== undefined) url.searchParams.set("k", String(params.k));
   if (params.query) url.searchParams.set("query", params.query);

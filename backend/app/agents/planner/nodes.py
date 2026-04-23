@@ -6,7 +6,7 @@ from app.services.llm import get_llm
 
 class PlannerNodes:
     def __init__(self, memory_provider: MemoryProvider) -> None:
-        self.llm = get_llm(max_tokens=600)
+        self.llm = get_llm(max_tokens=2000)
         self.memory_provider = memory_provider
 
     async def calendar_analyzer(self, state: AcademicState) -> AcademicState:

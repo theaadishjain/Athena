@@ -49,10 +49,8 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
-];
-
-const SOON_ITEMS = [
   {
+    href: "/studyplan",
     label: "Study plan",
     icon: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -64,6 +62,8 @@ const SOON_ITEMS = [
     ),
   },
 ];
+
+const SOON_ITEMS: { label: string; icon: React.ReactNode }[] = [];
 
 function relativeTime(isoString: string): string {
   const now = Date.now();
@@ -150,8 +150,8 @@ export default function Sidebar() {
         sessionStorage.removeItem("athena_current_session");
         router.push("/chat?new=" + Date.now());
       }
-    } catch (err) {
-      console.error("[DELETE] failed:", err);
+    } catch {
+      // deletion failed — UI resets via finally block
     } finally {
       setDeletingId(null);
     }

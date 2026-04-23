@@ -1,6 +1,8 @@
 from app.agents.shared.state import AcademicState
 import json
-import traceback
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class AgentExecutor:
@@ -34,7 +36,7 @@ class AgentExecutor:
             updated["error"] = None
             return updated
         except Exception as exc:  # pragma: no cover
-            traceback.print_exc()
+            logger.exception("Agent pipeline error")
             state["error"] = str(exc)
 
             if state.get("intent") == "flashcard":

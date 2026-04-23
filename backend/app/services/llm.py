@@ -9,7 +9,7 @@ def get_llm(max_tokens: int = 500) -> ChatOpenAI:
         base_url="https://openrouter.ai/api/v1",
         max_tokens=max_tokens,
         default_headers={
-            "HTTP-Referer": "http://localhost:3000",
+            "HTTP-Referer": settings.app_url,
             "X-Title": "Athena AI"
         }
     )

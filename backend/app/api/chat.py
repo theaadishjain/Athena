@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from typing import Literal
@@ -10,6 +11,7 @@ from app.core.dependencies import get_coordinator_workflow
 from app.schemas.requests import ChatRequest
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+logger = logging.getLogger(__name__)
 
 
 def build_state(
@@ -67,8 +69,7 @@ async def chat(
             yield f"data: {final}\n\n"
 
         except Exception as exc:
-            import traceback
-            traceback.print_exc()
+            logger.exception("Unhandled error in chat stream")
             error_final = json.dumps({
                 "type": "done",
                 "agent": "coordinator",

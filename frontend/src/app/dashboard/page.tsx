@@ -9,7 +9,6 @@ import type { ChatSessionMeta, LoadingState, ChatMessage } from "@/lib/types";
 import {
   listSessions,
   getSessionMessages,
-  getStudyPlan,
   getMemoryProfile,
 } from "@/lib/api";
 import { useSession } from "@/lib/session";
@@ -72,13 +71,6 @@ export default function DashboardPage() {
   const [sessions, setSessions] = useState<ChatSessionMeta[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
 
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-  const [studyPlan, setStudyPlan] = useState<string | null>(null);
-  const [planState, setPlanState] = useState<LoadingState>("idle");
-  const [planError, setPlanError] = useState<string | null>(null);
-  const [examTopic, setExamTopic] = useState("");
-  const [sessionCount, setSessionCount] = useState(3);
-
   const [recentMessages, setRecentMessages] = useState<ChatMessage[]>([]);
   const [recentSession, setRecentSession] = useState<ChatSessionMeta | null>(null);
 
@@ -137,69 +129,8 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionsLoaded]);
 
-  const handleGeneratePlan = useCallback(async () => {
-    if (!examTopic.trim() && !selectedSessionId) return;
-    setPlanState("loading");
-    setPlanError(null);
-    setStudyPlan(null);
-    try {
-      const token = await getToken();
-      if (!token) throw new Error("Auth failed");
-
-      // Get selected session title if a session is picked
-      const selectedSession = sessions.find(s => s.id === selectedSessionId);
-      const selectedSessionTitle = selectedSession?.title ?? "";
-
-      // Fetch context messages if a session is selected
-      let sessionContext = "";
-      if (selectedSessionId) {
-        try {
-          const msgs = await getSessionMessages(selectedSessionId, token);
-          const userMsgs = msgs.filter(m => m.role === "user").slice(-5);
-          sessionContext = userMsgs.map(m => m.content).join("; ");
-        } catch { /* use empty context */ }
-      }
-
-      // Build a proper planning prompt
-      const topicLine = examTopic.trim()
-        ? `Create a detailed study schedule and exam preparation plan for: ${examTopic.trim()}.`
-        : `Create a detailed study schedule based on my recent sessions.`;
-
-      const sessionLine = selectedSessionTitle
-        ? `Base this on my previous study session about: "${selectedSessionTitle}".`
-        : "";
-
-      const contextLine = sessionContext
-        ? `Key topics I have already covered: ${sessionContext}.`
-        : "";
-
-      const planInput = [
-        topicLine,
-        sessionLine,
-        contextLine,
-        `Number of study sessions needed: ${sessionCount}.`,
-        "Include: daily topics, time allocation per session, revision strategy, and a final review day.",
-        "Format as a structured schedule with clear day-by-day breakdown.",
-      ].filter(Boolean).join(" ");
-
-      const res = await getStudyPlan(
-        { session_id: selectedSessionId ?? session.session_id, input: planInput },
-        token
-      );
-      setStudyPlan(res.response);
-      setPlanState("success");
-    } catch (err) {
-      setPlanError(err instanceof Error ? err.message : "Failed to generate plan");
-      setPlanState("error");
-    }
-  }, [examTopic, selectedSessionId, sessionCount, sessions, getToken, session.session_id]);
-
   const handleChatSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!examTopic.trim()) return;
-    sessionStorage.setItem("athena_pending_query", examTopic.trim());
-    sessionStorage.removeItem("athena_current_session");
-    sessionStorage.removeItem("studyco_current_session");
     router.push("/chat");
   };
 
@@ -253,11 +184,8 @@ export default function DashboardPage() {
             <span className="sect-num">ATHENA · MMXXVI</span>
           </div>
 
-          {/* Greeting + Plan Generator */}
-          <div style={{ display: "grid", gridTemplateColumns: "1.35fr 1fr", gap: 32, alignItems: "start", marginBottom: 32 }}>
-
-            {/* Greeting block */}
-            <div style={{ paddingTop: 4 }}>
+          {/* Greeting block — full width */}
+          <div style={{ paddingTop: 4, marginBottom: 32 }}>
               <div className="eyebrow" style={{ marginBottom: 16 }}>
                 {sessions.length > 0 && recentSession
                   ? <><span style={{ color: "var(--cream)" }}>{recentSession.title.slice(0, 40)}</span> · last session</>
@@ -295,112 +223,6 @@ export default function DashboardPage() {
                   Upload lecture
                 </button>
               </div>
-            </div>
-
-            {/* Plan Generator card */}
-            <div style={{ border: "1px solid var(--border-strong)", position: "relative", background: "rgba(237,232,220,0.015)" }}>
-              <CornerTicks size={8} offset={0} color="rgba(237,232,220,0.4)" />
-              <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
-                <span className="sect-num">§ PLAN GENERATOR</span>
-                <AgentBadge agent="Planner" />
-              </div>
-              <div style={{ padding: "18px 20px" }}>
-                <label className="sect-num" style={{ fontSize: 9, display: "block", marginBottom: 6 }}>EXAM / TOPIC</label>
-                <input
-                  className="athena-input"
-                  value={examTopic}
-                  onChange={(e) => setExamTopic(e.target.value)}
-                  placeholder="e.g. Linear Algebra Midterm"
-                  style={{
-                    fontFamily: "var(--font-head)", fontSize: 17, padding: "8px 0",
-                    borderLeft: 0, borderRight: 0, borderTop: 0,
-                    borderBottom: "1px solid var(--border-strong)",
-                    background: "transparent", marginBottom: 16, display: "block", width: "100%",
-                  }}
-                />
-
-                {/* Base on session */}
-                {sessionsLoaded && sessions.length > 0 && (
-                  <div style={{ marginBottom: 16 }}>
-                    <label className="sect-num" style={{ fontSize: 9, display: "block", marginBottom: 6 }}>BASE ON SESSION</label>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 110, overflow: "auto" }}>
-                      {sessions.slice(0, 5).map((s) => (
-                        <button key={s.id}
-                          id={`session-row-${s.id}`}
-                          onClick={() => setSelectedSessionId(s.id)}
-                          style={{
-                            textAlign: "left", padding: "6px 10px", fontSize: 11,
-                            background: selectedSessionId === s.id ? "rgba(237,232,220,0.08)" : "transparent",
-                            border: `1px solid ${selectedSessionId === s.id ? "var(--cream)" : "var(--border)"}`,
-                            color: selectedSessionId === s.id ? "var(--cream)" : "var(--text-muted)",
-                            fontFamily: "var(--font-head)", cursor: "pointer", transition: "all .12s",
-                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                          }}
-                        >
-                          {s.title.slice(0, 40)}{s.title.length > 40 ? "…" : ""}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-                  <div>
-                    <label className="sect-num" style={{ fontSize: 9, display: "block", marginBottom: 6 }}>SESSIONS</label>
-                    <div style={{ display: "flex", gap: 3 }}>
-                      {[2, 3, 4, 5].map(n => (
-                        <button key={n}
-                          onClick={() => setSessionCount(n)}
-                          style={{
-                            flex: 1, padding: "5px 0", fontSize: 11,
-                            color: sessionCount === n ? "#0a0a0c" : "var(--text-muted)",
-                            background: sessionCount === n ? "var(--cream)" : "transparent",
-                            border: `1px solid ${sessionCount === n ? "var(--cream)" : "var(--border-strong)"}`,
-                            fontFamily: "var(--font-mono)", cursor: "pointer", transition: "all .12s",
-                          }}>{n}</button>
-                      ))}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "flex-end" }}>
-                    {planState === "error" && (
-                      <span style={{ fontSize: 10, color: "var(--cream)", fontFamily: "var(--font-mono)" }}>
-                        {planError}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <form onSubmit={handleChatSubmit}>
-                  <button
-                    type="submit"
-                    onClick={selectedSessionId || examTopic.trim() ? (e) => { e.preventDefault(); handleGeneratePlan(); } : undefined}
-                    disabled={planState === "loading"}
-                    style={{
-                      width: "100%", padding: "12px",
-                      background: "var(--cream)", color: "#0a0a0c",
-                      fontSize: 11, fontFamily: "var(--font-mono)", letterSpacing: "0.1em", textTransform: "uppercase",
-                      border: "none", cursor: planState === "loading" ? "not-allowed" : "pointer",
-                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                      opacity: planState === "loading" ? 0.6 : 1,
-                    }}
-                  >
-                    {planState === "loading" ? "Generating…" : "Generate plan →"}
-                    <span style={{ fontSize: 9, opacity: 0.5 }}>/plan</span>
-                  </button>
-                </form>
-              </div>
-
-              {planState === "success" && studyPlan && (
-                <div style={{ borderTop: "1px solid var(--border)", padding: "16px 20px" }}>
-                  <div className="sect-num" style={{ marginBottom: 10 }}>§ GENERATED PLAN</div>
-                  <div
-                    className="prose-chat"
-                    dangerouslySetInnerHTML={{ __html: renderWithLatex(studyPlan) }}
-                    style={{ fontSize: 13 }}
-                  />
-                </div>
-              )}
-            </div>
           </div>
 
           {/* Memory Profile */}

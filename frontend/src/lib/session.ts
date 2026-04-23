@@ -69,7 +69,7 @@ export function useSession(): Session {
   const sessionIdRef = useRef<string>(getSessionId());
 
   return {
-    user_id: userId ?? "anonymous",
+    user_id: userId ?? "",
     session_id: sessionIdRef.current,
   };
 }
