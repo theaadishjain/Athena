@@ -5,15 +5,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 
-const UNIVERSITIES = [
-  { name: "Stanford", style: { fontFamily: "var(--font-head)", fontSize: 22, fontStyle: "italic" } },
-  { name: "MIT", style: { fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 600, letterSpacing: "0.08em" } },
-  { name: "Harvard", style: { fontFamily: "var(--font-head)", fontSize: 22, fontStyle: "italic" } },
-  { name: "Berkeley", style: { fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 500, letterSpacing: "0.12em" } },
-  { name: "Princeton", style: { fontFamily: "var(--font-head)", fontSize: 22, fontStyle: "italic" } },
-  { name: "CMU", style: { fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 600, letterSpacing: "0.08em" } },
-];
-
 const FEATURES = [
   {
     title: "Conversational tutoring",
@@ -339,24 +330,6 @@ export default function LandingPage() {
             </div>
             <HeroMockup onCta={() => handleCta("/chat")} />
           </div>
-        </div>
-      </section>
-
-      {/* Universities */}
-      <section style={{ padding: "110px 48px 0", position: "relative", zIndex: 2 }}>
-        <div style={{
-          display: "flex", justifyContent: "space-between", alignItems: "baseline",
-          borderTop: "1px solid rgba(237,232,220,0.08)",
-          borderBottom: "1px solid rgba(237,232,220,0.08)",
-          padding: "18px 0",
-        }}>
-          <span className="sect-num">§ 02 — IN PRACTICE AT</span>
-          <div style={{ display: "flex", alignItems: "center", gap: 40, opacity: 0.65 }}>
-            {UNIVERSITIES.map((u) => (
-              <span key={u.name} style={{ color: "var(--cream)", ...u.style }}>{u.name}</span>
-            ))}
-          </div>
-          <span className="sect-num">+ 120 MORE</span>
         </div>
       </section>
 
