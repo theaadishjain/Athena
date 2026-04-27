@@ -57,3 +57,25 @@ yarn.lock
 # Temp files
 test_doc.txt
 
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Docker volumes (never commit persistent data)
+studyco_mempalace_data/
+studyco_sqlite_data/
+
+# Backend runtime artifacts
+backend/studyco.db
+backend/*.db
+backend/__pycache__/
+backend/.env
+backend/venv/
+backend/.venv/
+
+# Frontend runtime artifacts
+frontend/.next/
+frontend/node_modules/
+frontend/.env.local
+
+
