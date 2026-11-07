@@ -3,6 +3,7 @@ from app.agents.shared.parsing import clean_flashcards, message_text, parse_json
 from app.agents.shared.prompts import format_history
 from app.agents.shared.state import AcademicState
 from app.memory.provider import MemoryProvider
+from app.core.config import get_settings
 from app.services.llm import get_llm
 
 FLASHCARD_PROMPT = """You are a study assistant. Based on the following input, \
@@ -30,6 +31,8 @@ STRICT_PREFIX = (
 class FlashcardNodes:
     def __init__(self, memory_provider: MemoryProvider) -> None:
         self.llm = get_llm(max_tokens=3500)
+        # Cards from an uploaded file use the faster document model.
+        self.document_llm = get_llm(max_tokens=3500, model=get_settings().document_model)
         self.memory_provider = memory_provider
 
     async def _generate(self, prompt: str) -> list[dict]:
@@ -51,7 +54,7 @@ class FlashcardNodes:
         if document:
             # Uploaded file: cards from every part of it, each citing its page.
             cards = await flashcards_from_document(
-                document, state.get("requested_count") or 10, self.llm, memory_text
+                document, state.get("requested_count") or 10, self.document_llm, memory_text
             )
         else:
             prompt = FLASHCARD_PROMPT.format(

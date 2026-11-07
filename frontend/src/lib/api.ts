@@ -52,6 +52,68 @@ export interface ChatStreamDone {
   quiz?: QuizQuestion[]
 }
 
+/** Read an SSE response of `token` events followed by one `done` event. */
+async function readEventStream(
+  res: Response,
+  onToken: (token: string) => void,
+  onDone: (meta: ChatStreamDone) => void,
+  onError: (error: string) => void
+): Promise<void> {
+  if (!res.ok || !res.body) {
+    throw new ApiClientError(res.ok ? "Stream failed" : await errorMessage(res), res.status)
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+  let gotDone = false
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split("\n")
+    buffer = lines.pop() ?? ""
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue
+      const raw = line.slice(6).trim()
+      if (!raw) continue
+
+      try {
+        const parsed = JSON.parse(raw)
+        if (parsed.type === "token") {
+          onToken(parsed.content)
+        } else if (parsed.type === "done") {
+          gotDone = true
+          onDone({
+            agent: parsed.agent,
+            memory_updated: parsed.memory_updated,
+            fallback: parsed.fallback,
+            content: parsed.content ?? "",
+            flashcards: parsed.flashcards ?? undefined,
+            quiz: parsed.quiz ?? undefined,
+          })
+        }
+      } catch {
+        // skip malformed chunk
+      }
+    }
+  }
+  if (!gotDone) {
+    onError("The connection closed before the reply finished. Please try again.")
+  }
+}
+
+function streamFailure(err: unknown, onError: (error: string) => void): void {
+  if (err instanceof ApiClientError) {
+    onError(err.message)
+  } else {
+    onError("Cannot reach the backend. Is it running on " + BASE_URL + "?")
+  }
+}
+
 export async function sendChatMessageStream(
   params: ChatRequest,
   token: string,
@@ -68,58 +130,34 @@ export async function sendChatMessageStream(
       },
       body: JSON.stringify(params),
     })
-
-    if (!res.ok || !res.body) {
-      throw new ApiClientError(res.ok ? "Stream failed" : await errorMessage(res), res.status)
-    }
-
-    const reader = res.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ""
-    let gotDone = false
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split("\n")
-      buffer = lines.pop() ?? ""
-
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue
-        const raw = line.slice(6).trim()
-        if (!raw) continue
-
-        try {
-          const parsed = JSON.parse(raw)
-          if (parsed.type === "token") {
-            onToken(parsed.content)
-          } else if (parsed.type === "done") {
-            gotDone = true
-            onDone({
-              agent: parsed.agent,
-              memory_updated: parsed.memory_updated,
-              fallback: parsed.fallback,
-              content: parsed.content ?? "",
-              flashcards: parsed.flashcards ?? undefined,
-              quiz: parsed.quiz ?? undefined,
-            })
-          }
-        } catch {
-          // skip malformed chunk
-        }
-      }
-    }
-    if (!gotDone) {
-      onError("The connection closed before the reply finished. Please try again.")
-    }
+    await readEventStream(res, onToken, onDone, onError)
   } catch (err) {
-    if (err instanceof ApiClientError) {
-      onError(err.message)
-    } else {
-      onError("Cannot reach the backend. Is it running on " + BASE_URL + "?")
-    }
+    streamFailure(err, onError)
+  }
+}
+
+/** Summarize a file, streaming the summary as it is written. The `done`
+ * event's content is the final, citation-checked text. */
+export async function summarizeFileStream(
+  file: File,
+  sessionId: string,
+  token: string,
+  onToken: (token: string) => void,
+  onDone: (meta: ChatStreamDone) => void,
+  onError: (error: string) => void
+): Promise<void> {
+  const formData = new FormData()
+  formData.append("file", file)
+  formData.append("session_id", sessionId)
+  try {
+    const res = await fetch(`${BASE_URL}/summarize/stream`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}` },
+      body: formData,
+    })
+    await readEventStream(res, onToken, onDone, onError)
+  } catch (err) {
+    streamFailure(err, onError)
   }
 }
 

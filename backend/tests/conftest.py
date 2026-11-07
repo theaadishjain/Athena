@@ -93,7 +93,7 @@ class Harness:
             model = FakeChatModel(responses=replies.get(name, [f"{name} reply"]))
             self.models[name] = model
 
-            def factory(max_tokens=500, stream_to_user=False, _m=model):
+            def factory(max_tokens=500, stream_to_user=False, model=None, _m=model):
                 return _m.with_config(tags=[STREAM_TO_USER_TAG]) if stream_to_user else _m
 
             self.monkeypatch.setattr(module, "get_llm", factory)

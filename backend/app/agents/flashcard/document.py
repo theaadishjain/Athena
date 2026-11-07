@@ -13,10 +13,9 @@ from typing import Any, List
 
 from app.agents.shared.parsing import clean_flashcards, message_text, parse_json_array
 from app.agents.summarizer.document import CHUNK_CHARS, SINGLE_PASS_CHARS, chunk_segments, render_segments
+from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
-
-MAP_CONCURRENCY = 8
 
 DOCUMENT_FLASHCARD_PROMPT = """You are a study assistant making flashcards from {scope} of a student's document.
 Each section starts with its source label in square brackets, such as {example}.
@@ -99,7 +98,7 @@ async def flashcards_from_document(document: dict, count: int, llm: Any, memory_
         # Never more parts than cards, so every part gets at least one.
         parts = chunk_segments(segments, max(CHUNK_CHARS, math.ceil(len(full_text) / count)))
     shares = allocate(count, [len(render_segments(p)) for p in parts])
-    gate = asyncio.Semaphore(MAP_CONCURRENCY)
+    gate = asyncio.Semaphore(get_settings().llm_max_concurrency)
 
     async def generate(index: int, part: List[dict], share: int) -> List[dict]:
         if share <= 0:

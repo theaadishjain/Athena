@@ -14,13 +14,13 @@ import time
 from typing import Any, List
 
 from app.agents.shared.parsing import message_text
+from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 # One call up to ~30k tokens of text; above that, map-reduce.
 SINGLE_PASS_CHARS = 120_000
 CHUNK_CHARS = 30_000
-MAP_CONCURRENCY = 8
 
 SUMMARY_FORMAT = """Write the summary in Markdown with exactly these sections:
 
@@ -28,13 +28,15 @@ SUMMARY_FORMAT = """Write the summary in Markdown with exactly these sections:
 Two or three sentences on what the document covers.
 
 ## Key concepts
-Bullet points. End EVERY bullet with the source label(s) it comes from, e.g. {example}.
+8–15 bullets on the ideas most likely to be examined. Group related material into one bullet rather than giving every section its own; keep each bullet under 30 words. End EVERY bullet with the source label(s) it comes from, e.g. {example}.
 
 ## Definitions & formulas
-"**Term** — definition" bullets (formulas in LaTeX, $...$), each ending with its source label. Leave this section out if the document has none.
+Up to 10 "**Term** — definition" bullets for the most important terms (formulas in LaTeX, $...$), each under 25 words and ending with its source label. Leave this section out if the document has none.
 
 ## Revision checklist
-5–8 "- [ ] ..." items a student can tick off. No citations here.
+5–8 short "- [ ] ..." items a student can tick off. No citations here.
+
+This is a summary, not a rewrite: be selective and concise.
 
 Citation rules:
 - Cite only labels that appear in the source, written exactly like {example}. For a point spanning neighbouring sections use {range_example}.
@@ -103,26 +105,39 @@ def chunk_segments(segments: List[dict], max_chars: int | None = None) -> List[L
     return chunks
 
 
-_PAGE_CITE_RE = re.compile(r"\s?\[(?:pp?\.)\s*(\d+)(?:\s*[–—-]\s*(\d+))?\]")
-_LINE_CITE_RE = re.compile(r"\s?\[L(\d+)(?:\s*[–—-]\s*L?(\d+))?\]")
+# One citation may hold several ranges: [p. 4], [pp. 4–6], [pp. 1-18, 53-54],
+# [L41–80], [L41–80, L120–160].
+_RANGE = r"\d+(?:\s*[–—-]\s*L?\d+)?"
+_PAGE_CITE_RE = re.compile(rf"(\s?)\[pp?\.\s*({_RANGE}(?:\s*,\s*{_RANGE})*)\]")
+_LINE_CITE_RE = re.compile(rf"(\s?)\[L({_RANGE}(?:\s*,\s*L?{_RANGE})*)\]")
+_RANGE_PARTS_RE = re.compile(r"(\d+)(?:\s*[–—-]\s*L?(\d+))?")
 
 
 def validate_citations(text: str, document: dict) -> str:
-    """Drop citations pointing outside the document (invented page numbers)."""
+    """Drop cited pages / lines that fall outside the document (invented
+    numbers), keeping the valid ranges of a citation."""
     segments = document["segments"]
     if not segments:
         return text
     low = min(s["start"] for s in segments)
     high = max(s["end"] for s in segments)
-    pattern = _LINE_CITE_RE if document["kind"] == "lines" else _PAGE_CITE_RE
+    lines = document["kind"] == "lines"
+    pattern = _LINE_CITE_RE if lines else _PAGE_CITE_RE
 
     def check(match: re.Match) -> str:
-        start = int(match.group(1))
-        end = int(match.group(2) or start)
-        if low <= start <= end <= high:
+        ranges = [(int(a), int(b or a)) for a, b in _RANGE_PARTS_RE.findall(match.group(2))]
+        valid = [(a, b) for a, b in ranges if low <= a <= b <= high]
+        if len(valid) == len(ranges):
             return match.group(0)
         logger.info("Dropped out-of-range citation %r", match.group(0).strip())
-        return ""
+        if not valid:
+            return ""
+        if lines:
+            body = ", ".join(f"L{a}" if a == b else f"L{a}–{b}" for a, b in valid)
+            return f"{match.group(1)}[{body}]"
+        single = len(valid) == 1 and valid[0][0] == valid[0][1]
+        body = ", ".join(str(a) if a == b else f"{a}–{b}" for a, b in valid)
+        return f"{match.group(1)}[{'p.' if single else 'pp.'} {body}]"
 
     return pattern.sub(check, text)
 
@@ -156,7 +171,8 @@ async def summarize_document(document: dict, memory_text: str, map_llm: Any, fin
     else:
         chunks = chunk_segments(segments)
         parts = len(chunks)
-        gate = asyncio.Semaphore(MAP_CONCURRENCY)
+        # Free tiers limit requests per minute, so cap parallel calls.
+        gate = asyncio.Semaphore(get_settings().llm_max_concurrency)
 
         async def take_notes(index: int, chunk: List[dict]) -> str:
             prompt = MAP_PROMPT.format(

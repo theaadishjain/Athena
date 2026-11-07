@@ -9,7 +9,7 @@ import { SkeletonRows } from "@/components/ui/Skeleton";
 import type { Flashcard, UnifiedResponse, LoadingState } from "@/lib/types";
 import { renderWithLatex } from "@/lib/renderMarkdown";
 import { useAuth } from "@clerk/nextjs";
-import { summarizeFile, flashcardsFromFile, getAllNotes, saveNote, type PastSummary } from "@/lib/api";
+import { summarizeFileStream, flashcardsFromFile, getAllNotes, saveNote, type PastSummary } from "@/lib/api";
 import { getOrCreateSessionId } from "@/lib/session";
 
 const ACCEPTED_TYPES = ["application/pdf", "text/plain", "text/markdown"];
@@ -27,6 +27,8 @@ export default function NotesPage() {
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  // The summary as it streams in, before the final checked text arrives.
+  const [streamText, setStreamText] = useState("");
   // Flashcards made from the summarized file, on request.
   const [cards, setCards] = useState<Flashcard[] | null>(null);
   const [cardsState, setCardsState] = useState<LoadingState>("idle");
@@ -126,31 +128,57 @@ export default function NotesPage() {
     setLoadingState("loading");
     setError(null);
     setUploadProgress(0);
+    setStreamText("");
 
-    // Animate fake progress up to 85% while waiting
+    // Fake progress while the file is read, until the summary starts arriving.
     const progressInterval = setInterval(() => {
       setUploadProgress(p => {
         if (p === null || p >= 85) return p;
-        return Math.min(85, p + 4 + Math.random() * 6);
+        return Math.min(85, p + 2 + Math.random() * 4);
       });
-    }, 140);
+    }, 200);
+    const stopProgress = () => { clearInterval(progressInterval); setUploadProgress(null); };
 
     try {
       const token = await getToken();
       if (!token) throw new Error("Auth failed");
       const activeSessionId = getOrCreateSessionId();
-      const res = await summarizeFile(file, activeSessionId, token);
-      clearInterval(progressInterval);
-      setUploadProgress(100);
-      setTimeout(() => setUploadProgress(null), 400);
-      setSummary(res);
-      setLoadingState("success");
-      saveNote(activeSessionId, file.name, res.response, token)
-        .catch(() => {})
-        .finally(() => fetchPastSummaries());
+      let first = true;
+      await summarizeFileStream(
+        file,
+        activeSessionId,
+        token,
+        (chunk) => {
+          if (first) { first = false; stopProgress(); }
+          setStreamText((t) => t + chunk);
+        },
+        (meta) => {
+          stopProgress();
+          // The final text has invented citations removed; it replaces the stream.
+          setSummary({
+            status: meta.fallback ? "error" : "success",
+            agent: "summarizer",
+            response: meta.content,
+            memory_updated: meta.memory_updated,
+            fallback: meta.fallback,
+          });
+          setStreamText("");
+          setLoadingState("success");
+          if (!meta.fallback) {
+            saveNote(activeSessionId, file.name, meta.content, token)
+              .catch(() => {})
+              .finally(() => fetchPastSummaries());
+          }
+        },
+        (message) => {
+          stopProgress();
+          setStreamText("");
+          setError(message);
+          setLoadingState("error");
+        }
+      );
     } catch (err) {
-      clearInterval(progressInterval);
-      setUploadProgress(null);
+      stopProgress();
       setError(err instanceof Error ? err.message : "Failed to summarize file");
       setLoadingState("error");
     }
@@ -159,6 +187,7 @@ export default function NotesPage() {
   const handleReset = useCallback(() => {
     setFile(null);
     setSummary(null);
+    setStreamText("");
     setError(null);
     setLoadingState("idle");
     setUploadProgress(null);
@@ -190,7 +219,8 @@ export default function NotesPage() {
     }
   }, [file, cardsState, getToken]);
 
-  const showSummary = loadingState === "success" && summary !== null;
+  const writing = loadingState === "loading" && streamText !== "";
+  const showSummary = (loadingState === "success" && summary !== null) || writing;
 
   return (
     <DashboardLayout>
@@ -305,8 +335,14 @@ export default function NotesPage() {
                   {/* Doc header */}
                   <div className="border-b border-line px-5 py-4">
                     <div className="mb-2.5 flex items-center gap-2.5">
-                      <AgentBadge agent={summary.agent} />
-                      <span className="label ml-auto">Complete</span>
+                      <AgentBadge agent={summary?.agent ?? "summarizer"} />
+                      {writing ? (
+                        <span className="label ml-auto inline-flex items-center gap-1.5">
+                          <span className="pulse-dot h-[5px] w-[5px]" /> Writing…
+                        </span>
+                      ) : (
+                        <span className="label ml-auto">Complete</span>
+                      )}
                     </div>
                     <h2 className="h-sm mb-1.5"><em className="serif-i">{file?.name}</em></h2>
                     <div className="label">{new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</div>
@@ -315,9 +351,9 @@ export default function NotesPage() {
                   {/* Body */}
                   <div className="px-6 pt-5 pb-6">
                     <div className="label mb-2.5">§ Summary</div>
-                    <div className="prose-chat" dangerouslySetInnerHTML={{ __html: renderWithLatex(summary.response, { citations: true }) }} />
+                    <div className="prose-chat" dangerouslySetInnerHTML={{ __html: renderWithLatex(summary?.response ?? streamText, { citations: true }) }} />
 
-                    {summary.memory_updated && (
+                    {summary?.memory_updated && (
                       <div className="mt-4 flex items-center gap-1.5 border-t border-line pt-3 text-muted">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
@@ -327,6 +363,7 @@ export default function NotesPage() {
                     )}
 
                     {/* Export row */}
+                    {!writing && (<>
                     <div className="mt-4 flex items-center gap-2 border-t border-line pt-3.5">
                       <span className="label">Export →</span>
                       <button id="export-pdf-btn" onClick={handleExportPDF} className="btn btn-ghost btn-sm">PDF</button>
@@ -355,6 +392,7 @@ export default function NotesPage() {
                         </>
                       )}
                     </div>
+                    </>)}
                   </div>
                 </div>
               )}

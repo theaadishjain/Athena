@@ -3,6 +3,7 @@ from app.agents.shared.parsing import message_text
 from app.agents.shared.prompts import SUMMARIZER_PROMPT, format_history
 from app.agents.shared.state import AcademicState
 from app.agents.summarizer.document import summarize_document
+from app.core.config import get_settings
 from app.memory.provider import MemoryProvider
 from app.services.llm import get_llm
 
@@ -10,9 +11,11 @@ from app.services.llm import get_llm
 class SummarizerNodes:
     def __init__(self, memory_provider: MemoryProvider) -> None:
         self.llm = get_llm(max_tokens=1500, stream_to_user=True)
-        # Uploaded documents: short per-part notes, then a longer final summary.
-        self.map_llm = get_llm(max_tokens=700)
-        self.document_llm = get_llm(max_tokens=2500)
+        # Uploaded documents: short per-part notes, then a final summary that
+        # streams to the browser on /summarize/stream (part notes never do).
+        document_model = get_settings().document_model
+        self.map_llm = get_llm(max_tokens=700, model=document_model)
+        self.document_llm = get_llm(max_tokens=2500, stream_to_user=True, model=document_model)
         self.memory_provider = memory_provider
 
     async def summarize(self, state: AcademicState) -> AcademicState:

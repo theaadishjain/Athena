@@ -63,8 +63,8 @@ function setupBrowser(): void {
   });
 }
 
-// Source citations in document summaries: [p. 4], [pp. 4–6], [L41–80].
-const CITATION_RE = /\[(?:pp?\.\s*\d+(?:\s*[–—-]\s*\d+)?|L\d+(?:\s*[–—-]\s*L?\d+)?)\]/g;
+// Source citations in document summaries: [p. 4], [pp. 4–6], [pp. 1-18, 53-54], [L41–80, L90–120].
+const CITATION_RE = /\[(?:pp?\.\s*\d+(?:\s*[–—-]\s*\d+)?(?:\s*,\s*\d+(?:\s*[–—-]\s*\d+)?)*|L\d+(?:\s*[–—-]\s*L?\d+)?(?:\s*,\s*L?\d+(?:\s*[–—-]\s*L?\d+)?)*)\]/g;
 
 export function renderWithLatex(text: string, options: { citations?: boolean } = {}): string {
   if (!text) return "";

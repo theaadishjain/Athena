@@ -79,6 +79,18 @@ def test_invented_citations_are_removed():
     assert doc.validate_citations("ok [L1–40] bad [L50–60]", lines) == "ok [L1–40] bad"
 
 
+def test_citations_with_several_ranges():
+    document = {"kind": "pages", "segments": [
+        {"label": f"p. {i}", "start": i, "end": i, "text": "x"} for i in range(1, 61)
+    ]}
+    # Real Gemini output keeps these as one citation.
+    assert doc.validate_citations("Types [pp. 1-18, 53-54].", document) == "Types [pp. 1-18, 53-54]."
+    assert doc.validate_citations("Mixed [pp. 2, 70-75].", document) == "Mixed [p. 2]."
+    assert doc.validate_citations("Mixed [pp. 2-3, 99].", document) == "Mixed [pp. 2–3]."
+    lines = {"kind": "lines", "segments": [{"label": "L1–80", "start": 1, "end": 80, "text": "x"}]}
+    assert doc.validate_citations("x [L1–40, L41–80, L90–99]", lines) == "x [L1–40, L41–80]"
+
+
 def test_chunks_keep_whole_segments_in_order():
     segments = [{"label": f"p. {i}", "start": i, "end": i, "text": "x" * 40} for i in range(1, 8)]
     chunks = doc.chunk_segments(segments, max_chars=100)
@@ -287,3 +299,35 @@ def test_flashcard_file_upload_is_validated(client, harness):
     assert flashcards_from_file(client, "x.exe", b"MZ", mime="application/octet-stream").status_code == 400
     assert flashcards_from_file(client, "n.txt", b"notes", count=0, mime="text/plain").status_code == 422
     assert flashcards_from_file(client, "n.txt", b"notes", count=51, mime="text/plain").status_code == 422
+
+
+def test_summary_streams_while_it_is_written(client, harness):
+    harness.use_replies(summarizer=["## Overview\nGraphs and shortest paths [p. 2]. Invented [p. 9]."])
+    with client.stream(
+        "POST", "/summarize/stream",
+        data={"session_id": str(uuid.uuid4())},
+        files={"file": ("l.pdf", make_pdf_pages(["Graphs intro", "Dijkstra"]), "application/pdf")},
+    ) as r:
+        assert r.status_code == 200
+        events = [json.loads(line[6:]) for line in r.iter_lines() if line.startswith("data: ")]
+
+    tokens = [e["content"] for e in events if e["type"] == "token"]
+    done = events[-1]
+    assert len(tokens) > 3  # arrives in pieces
+    assert "".join(tokens).startswith("## Overview")
+    assert done["type"] == "done" and done["fallback"] is False
+    assert done["content"] == "## Overview\nGraphs and shortest paths [p. 2]. Invented."  # checked text replaces stream
+
+
+def test_long_summary_streams_only_the_merge(client, harness, monkeypatch):
+    monkeypatch.setattr(doc, "SINGLE_PASS_CHARS", 500)
+    monkeypatch.setattr(doc, "CHUNK_CHARS", 300)
+    harness.use_replies(summarizer=["- part note [p. 1]"] * 3 + ["## Overview merged"])
+    with client.stream(
+        "POST", "/summarize/stream",
+        data={"session_id": str(uuid.uuid4())},
+        files={"file": ("b.pdf", make_pdf_pages([f"Topic {i} " * 30 for i in range(1, 4)]), "application/pdf")},
+    ) as r:
+        events = [json.loads(line[6:]) for line in r.iter_lines() if line.startswith("data: ")]
+    streamed = "".join(e["content"] for e in events if e["type"] == "token")
+    assert streamed == "## Overview merged"  # part notes are never shown

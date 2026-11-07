@@ -75,7 +75,7 @@ Unlike ChatGPT and similar tools, Athena **remembers you permanently** using vec
 │            │    ↙      ↙      ↓      ↘      ↘              │
 │            │ Advisor Planner Summarizer Flashcard Quiz       │
 │            │              Agent Executor                     │
-│            │              OpenRouter (gemini-2.5-flash)      │
+│            │     Gemini API (gemini-3.8-flash) or OpenRouter │
 └──────────────────────────┬──────────────────────────────────┘
             read ↕ write   │  session save
 ┌──────────────────────────▼──────────────────────────────────┐
@@ -101,7 +101,7 @@ read top-k → inject into AcademicState → agent generates → write to Chroma
 | Frontend | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4 |
 | Auth | Clerk (RS256 JWT verified with PyJWT, permanent userId, cross-device) |
 | Backend | Python 3.11, FastAPI, LangGraph |
-| LLM | OpenRouter → google/gemini-2.5-flash |
+| LLM | Google Gemini API (`gemini-3.8-flash`, free tier works) via its OpenAI-compatible endpoint; OpenRouter also supported |
 | Memory | MemPalace + ChromaDB (vector DB) |
 | Database | SQLite via SQLAlchemy async (aiosqlite) |
 | Rendering | marked.js + KaTeX + highlight.js, sanitized with DOMPurify |
@@ -252,8 +252,14 @@ npm run dev
 ### Backend (`backend/.env`)
 
 ```env
-OPENROUTER_API_KEY=sk-or-...
-LLM_MODEL=google/gemini-2.5-flash
+LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+LLM_API_KEY=your-google-ai-studio-key
+LLM_MODEL=gemini-3.8-flash
+LLM_FALLBACK_MODEL=gemini-3.5-flash-lite   # used when the main model is overloaded / rate-limited
+LLM_DOCUMENT_MODEL=gemini-3.5-flash-lite   # faster model for whole-file summaries and flashcards
+LLM_MAX_CONCURRENCY=3          # parallel calls for long PDFs; keep low on free tiers
+# Or use OpenRouter instead: drop the three LLM_ lines above and set
+# OPENROUTER_API_KEY=sk-or-...  and  LLM_MODEL=google/gemini-2.5-flash
 CLERK_SECRET_KEY=sk_test_...
 MEMPALACE_PATH=~/.mempalace/palace
 MEMPALACE_COLLECTION=studyco
@@ -285,7 +291,8 @@ NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard
 
 | Key | Source |
 |---|---|
-| `OPENROUTER_API_KEY` | [openrouter.ai/keys](https://openrouter.ai/keys) — free account |
+| `LLM_API_KEY` | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — free tier (Google may use free-tier requests to improve its products) |
+| `OPENROUTER_API_KEY` (optional alternative) | [openrouter.ai/keys](https://openrouter.ai/keys) |
 | `CLERK_SECRET_KEY` + `CLERK_PUBLISHABLE_KEY` | [clerk.com/dashboard](https://clerk.com/dashboard) — free account |
 
 ---
