@@ -63,7 +63,10 @@ function setupBrowser(): void {
   });
 }
 
-export function renderWithLatex(text: string): string {
+// Source citations in document summaries: [p. 4], [pp. 4–6], [L41–80].
+const CITATION_RE = /\[(?:pp?\.\s*\d+(?:\s*[–—-]\s*\d+)?|L\d+(?:\s*[–—-]\s*L?\d+)?)\]/g;
+
+export function renderWithLatex(text: string, options: { citations?: boolean } = {}): string {
   if (!text) return "";
   // DOMPurify needs a DOM. All callers render fetched content on the client,
   // so the server-rendered HTML for these blocks is empty anyway.
@@ -100,6 +103,11 @@ export function renderWithLatex(text: string): string {
     } catch { return latexBlocks[parseInt(i)]; }
   });
 
-  // Step 4: strip anything executable (scripts, on* handlers, javascript: URLs).
+  // Step 4: style page / line citations as small tags.
+  if (options.citations) {
+    rendered = rendered.replace(CITATION_RE, (cite) => `<span class="cite">${cite.slice(1, -1)}</span>`);
+  }
+
+  // Step 5: strip anything executable (scripts, on* handlers, javascript: URLs).
   return DOMPurify.sanitize(rendered, { ADD_ATTR: ["target"] });
 }

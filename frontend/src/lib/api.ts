@@ -176,24 +176,28 @@ export async function summarizeFile(
   }
 }
 
-// ─── Extract text (file upload) ───────────────────────────
-// Returns the document's plain text, parsed by the backend (handles PDFs).
+// ─── Flashcards from a file (upload) ─────────────────────
+// The backend reads the whole document and returns `count` cards spread
+// across it, each with the page (or line range) it came from.
 
-export async function extractText(
+export async function flashcardsFromFile(
   file: File,
+  count: number,
+  sessionId: string,
   token: string
-): Promise<string> {
+): Promise<UnifiedResponse> {
   const formData = new FormData()
   formData.append("file", file)
+  formData.append("count", String(count))
+  formData.append("session_id", sessionId)
 
   try {
-    const res = await fetch(`${BASE_URL}/extract`, {
+    const res = await fetch(`${BASE_URL}/flashcards/document`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}` },
       body: formData,
     })
-    const data = await handleResponse<{ filename: string; text: string }>(res)
-    return data.text
+    return handleResponse<UnifiedResponse>(res)
   } catch (err) {
     if (err instanceof ApiClientError) throw err
     throw new ApiClientError(
@@ -398,5 +402,31 @@ export async function getAllNotes(token: string): Promise<PastSummary[]> {
   } catch (err) {
     if (err instanceof ApiClientError) throw err;
     throw new ApiClientError("Cannot reach backend");
+  }
+}
+
+// ─── Quiz results ─────────────────────────────────────────
+// Saves a finished quiz. Missed questions become a weak area that the
+// dashboard shows and the Quiz agent targets next time.
+
+export interface QuizResultPayload {
+  /** The request that produced the quiz, e.g. "Quiz me on photosynthesis". */
+  topic: string;
+  score: number;
+  total: number;
+  missed: { question: string; correct_answer: string }[];
+  session_id?: string | null;
+}
+
+export async function saveQuizResult(payload: QuizResultPayload, token: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE_URL}/quiz/results`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload),
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
 }

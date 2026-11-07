@@ -36,7 +36,7 @@ _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$", re.MULTILINE)
 _BOLD_LINE_RE = re.compile(r"^\s*\*\*(.+?)\*\*\s*:?\s*$", re.MULTILINE)
 _GENERIC_HEADINGS = re.compile(
     r"^(?:summary|overview|key (?:concepts|points|takeaways)|revision checklist|"
-    r"checklist|introduction|notes|lecture notes|conclusion)\b",
+    r"checklist|introduction|notes|lecture notes|conclusion|definitions(?: (?:&|and) formulas)?)\b",
     re.IGNORECASE,
 )
 
@@ -68,6 +68,28 @@ def summary_topic(summary: str, source: str = "") -> str | None:
     first_line = next((line.strip() for line in (source or "").splitlines() if line.strip()), "")
     first_line = _clean_heading(first_line.split(". ")[0])
     return first_line[:MAX_TOPIC_CHARS] or None
+
+
+_QUIZ_REQUEST_RE = re.compile(
+    r"^\s*(?:/quiz|/mcq)?\s*(?:(?:can you |could you |please )*"
+    r"(?:quiz me|test me|give me (?:a )?(?:quiz|test)|make (?:me )?(?:a )?quiz|"
+    r"generate (?:a )?quiz|\d+ (?:mcqs?|questions))\b)?\s*(?:(?:on|about|over)\b)?\s*:?\s*",
+    re.IGNORECASE,
+)
+
+
+def quiz_topic(request: str) -> str:
+    """The subject of a quiz request: "Quiz me on: photosynthesis" -> "photosynthesis"."""
+    topic = _QUIZ_REQUEST_RE.sub("", (request or "").strip(), count=1).strip(" .?!")
+    return (topic or (request or "").strip() or "General")[:MAX_TOPIC_CHARS]
+
+
+def weak_area_from_quiz(topic: str, score: int, total: int, missed: list[str]) -> str | None:
+    """A weak-area note for a quiz with wrong answers, naming what was missed."""
+    if not missed or score >= total:
+        return None
+    note = f"Weak area: {topic} (quiz score {score}/{total}). Missed: " + "; ".join(q.strip() for q in missed)
+    return note[:MAX_MEMORY_CHARS]
 
 
 def weak_subject_from_summary(summary: str, source: str = "") -> str | None:

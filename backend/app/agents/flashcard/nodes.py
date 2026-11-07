@@ -1,3 +1,4 @@
+from app.agents.flashcard.document import flashcards_from_document
 from app.agents.shared.parsing import clean_flashcards, message_text, parse_json_array
 from app.agents.shared.prompts import format_history
 from app.agents.shared.state import AcademicState
@@ -46,20 +47,27 @@ class FlashcardNodes:
         state["memory_context"] = past_chats + preferences
         memory_text = "\n".join(state["memory_context"]) if state["memory_context"] else "No memory found."
 
-        prompt = FLASHCARD_PROMPT.format(
-            user_input=state["input"],
-            memory_context=memory_text,
-            history=format_history(state.get("history")),
-        )
+        document = state.get("document")
+        if document:
+            # Uploaded file: cards from every part of it, each citing its page.
+            cards = await flashcards_from_document(
+                document, state.get("requested_count") or 10, self.llm, memory_text
+            )
+        else:
+            prompt = FLASHCARD_PROMPT.format(
+                user_input=state["input"],
+                memory_context=memory_text,
+                history=format_history(state.get("history")),
+            )
 
-        # Step 2: Call LLM. Fences / preamble are stripped by the parser, so
-        # the paid retry only happens when the reply really is unusable.
-        try:
-            cards = await self._generate(prompt)
-        except ValueError:
-            cards = []
-        if not cards:
-            cards = await self._generate(STRICT_PREFIX + prompt)
+            # Step 2: Call LLM. Fences / preamble are stripped by the parser, so
+            # the paid retry only happens when the reply really is unusable.
+            try:
+                cards = await self._generate(prompt)
+            except ValueError:
+                cards = []
+            if not cards:
+                cards = await self._generate(STRICT_PREFIX + prompt)
         if not cards:
             raise ValueError("LLM returned no usable flashcards")
 

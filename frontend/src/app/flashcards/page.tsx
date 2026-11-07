@@ -3,10 +3,11 @@
 import { useState, useCallback, useRef } from "react";
 import DashboardLayout from "@/components/ui/DashboardLayout";
 import AgentBadge from "@/components/ui/AgentBadge";
+import CornerTicks from "@/components/ui/CornerTicks";
 import FlashcardDeck from "@/components/chat/FlashcardDeck";
 import type { Flashcard, LoadingState } from "@/lib/types";
 import { useAuth } from "@clerk/nextjs";
-import { sendChatMessageStream, extractText } from "@/lib/api";
+import { sendChatMessageStream, flashcardsFromFile } from "@/lib/api";
 import { getOrCreateSessionId } from "@/lib/session";
 
 const ACCEPTED_TYPES = ["application/pdf", "text/plain", "text/markdown"];
@@ -15,25 +16,6 @@ const ACCEPTED_EXTENSIONS = [".pdf", ".txt", ".md"];
 function isAcceptedFile(file: File): boolean {
   const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
   return ACCEPTED_TYPES.includes(file.type) || ACCEPTED_EXTENSIONS.includes(ext);
-}
-
-function CornerTicks({ size = 8, offset = 0, color = "rgba(237,232,220,0.3)" }: { size?: number; offset?: number; color?: string }) {
-  const corners: React.CSSProperties[] = [
-    { top: offset, left: offset },
-    { top: offset, right: offset },
-    { bottom: offset, right: offset },
-    { bottom: offset, left: offset },
-  ];
-  const rotations = ["rotate(0)", "rotate(90deg)", "rotate(180deg)", "rotate(270deg)"];
-  return (
-    <>
-      {corners.map((style, i) => (
-        <svg key={i} style={{ position: "absolute", ...style, transform: rotations[i] }} width={size} height={size} viewBox="0 0 8 8" fill="none">
-          <path d="M0 8 L0 0 L8 0" stroke={color} strokeWidth="1" />
-        </svg>
-      ))}
-    </>
-  );
 }
 
 type InputMode = "file" | "topic";
@@ -108,16 +90,22 @@ export default function FlashcardsPage() {
 
       const sessionId = getOrCreateSessionId();
 
-      let chatInput: string;
       if (mode === "file" && file) {
-        // The backend parses the file (including PDFs, which the browser
-        // can't read) and caps the text at a model-safe length.
-        const fileText = await extractText(file, token);
-        chatInput = `Generate ${cardCount} flashcards from these notes: ${fileText}`;
-      } else {
-        chatInput = `Generate ${cardCount} flashcards on the topic: ${topic.trim()}`;
+        // The backend reads the whole file (PDFs included) and spreads the
+        // cards across it, each citing the page it came from.
+        const res = await flashcardsFromFile(file, cardCount, sessionId, token);
+        if (res.status === "success" && res.flashcards && res.flashcards.length > 0) {
+          setFlashcards(res.flashcards);
+          setMemoryUpdated(res.memory_updated);
+          setLoadingState("success");
+        } else {
+          setError(res.response || "No flashcards were returned. Try another file.");
+          setLoadingState("error");
+        }
+        return;
       }
 
+      const chatInput = `Generate ${cardCount} flashcards on the topic: ${topic.trim()}`;
       await sendChatMessageStream(
         // One-off generation: don't create a chat session or use chat history.
         { session_id: sessionId, input: chatInput, persist: false },
@@ -159,72 +147,44 @@ export default function FlashcardsPage() {
 
   return (
     <DashboardLayout>
-      <div style={{ flex: 1, minWidth: 0, height: "100%", overflow: "auto" }}>
-        <div style={{ padding: "34px 40px", maxWidth: 860 }}>
+      <div className="page-scroll">
+        <div className="page-pad page-narrow">
 
           {/* Running header */}
-          <div style={{
-            display: "flex", justifyContent: "space-between", alignItems: "baseline",
-            borderBottom: "1px solid var(--border)", paddingBottom: 12, marginBottom: 32,
-          }}>
-            <span className="sect-num">§ FLASHCARDS</span>
-            <span className="sect-num">ATHENA · MMXXVI</span>
+          <div className="running-head">
+            <span className="label">§ Flashcards</span>
+            <span className="label">Athena · MMXXVI</span>
           </div>
 
           {/* Page title */}
-          <div style={{ marginBottom: 28 }}>
-            <h1 style={{
-              fontFamily: "var(--font-head)", fontWeight: 400, fontSize: 42,
-              lineHeight: 1.05, color: "var(--cream)", letterSpacing: "-0.02em",
-              marginBottom: 8,
-            }}>
+          <div className="mb-7">
+            <h1 className="h-md mb-2">
               Flashcard <em className="serif-i">generator.</em>
             </h1>
-            <p style={{ fontSize: 14, color: "var(--cream-dim)", fontWeight: 300 }}>
-              Generate flashcards from your notes or any topic.
-            </p>
+            <p className="text-body">Generate flashcards from your notes or any topic.</p>
           </div>
 
           {/* Main card */}
-          <div style={{
-            border: "1px solid var(--border-strong)",
-            background: "rgba(237,232,220,0.015)",
-            position: "relative",
-            marginBottom: 32,
-          }}>
-            <CornerTicks size={8} offset={0} color="rgba(237,232,220,0.4)" />
+          <div className="panel panel-tinted mb-8">
+            <CornerTicks />
 
             {/* Card header + agent badge */}
-            <div style={{
-              padding: "12px 20px", borderBottom: "1px solid var(--border)",
-              display: "flex", alignItems: "center", gap: 10,
-            }}>
-              <span className="sect-num">§ INPUT</span>
+            <div className="panel-head px-5">
+              <span className="label">§ Input</span>
               <AgentBadge agent="flashcard" />
             </div>
 
-            <div style={{ padding: "20px 24px" }}>
+            <div className="px-6 py-5">
 
               {/* Mode tab switcher */}
-              <div style={{ display: "flex", gap: 3, marginBottom: 20 }}>
+              <div className="mb-5 flex gap-1">
                 {(["file", "topic"] as InputMode[]).map((m) => (
                   <button
                     key={m}
                     onClick={() => { setMode(m); setError(null); }}
-                    style={{
-                      padding: "7px 16px",
-                      fontSize: 10,
-                      fontFamily: "var(--font-mono)",
-                      letterSpacing: "0.1em",
-                      textTransform: "uppercase",
-                      background: mode === m ? "var(--cream)" : "transparent",
-                      color: mode === m ? "#0a0a0c" : "var(--text-muted)",
-                      border: `1px solid ${mode === m ? "var(--cream)" : "var(--border-strong)"}`,
-                      cursor: "pointer",
-                      transition: "all .15s",
-                    }}
+                    className={`seg ${mode === m ? "is-active" : ""}`}
                   >
-                    {m === "file" ? "Upload File" : "Enter Topic"}
+                    {m === "file" ? "Upload file" : "Enter topic"}
                   </button>
                 ))}
               </div>
@@ -236,19 +196,8 @@ export default function FlashcardsPage() {
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onClick={() => inputRef.current?.click()}
-                  style={{
-                    border: `1px dashed ${isDragOver ? "var(--cream)" : file ? "rgba(237,232,220,0.4)" : "var(--border-strong)"}`,
-                    background: isDragOver ? "rgba(237,232,220,0.04)" : "transparent",
-                    padding: "32px 24px",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: "pointer",
-                    transition: "all .2s",
-                    marginBottom: 20,
-                    textAlign: "center",
-                  }}
+                  className={`dropzone mb-5 px-6 py-8 ${isDragOver ? "is-over" : file ? "is-ready" : ""}`}
+                  style={{ borderWidth: 1 }}
                 >
                   <input
                     ref={inputRef}
@@ -261,27 +210,18 @@ export default function FlashcardsPage() {
                       if (selected) handleFile(selected);
                     }}
                   />
-                  <div style={{ fontSize: 28, marginBottom: 10, userSelect: "none" }}>
-                    {file ? "✅" : "📄"}
-                  </div>
+                  <div className="mb-2.5 text-[28px] select-none">{file ? "✅" : "📄"}</div>
                   {file ? (
                     <>
-                      <p style={{ fontSize: 13, fontWeight: 500, color: "var(--cream)", marginBottom: 2 }}>
-                        {file.name}
-                      </p>
-                      <p style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                        {(file.size / 1024).toFixed(1)} KB — Ready to generate
-                      </p>
+                      <p className="mb-0.5 text-[14.5px] font-semibold text-cream">{file.name}</p>
+                      <p className="text-meta text-dim">{(file.size / 1024).toFixed(1)} KB — Ready to generate</p>
                     </>
                   ) : (
                     <>
-                      <p style={{ fontSize: 13, color: "var(--cream-dim)", marginBottom: 2 }}>
-                        <span style={{ color: "var(--cream)", fontWeight: 500 }}>Click to upload</span>{" "}
-                        or drag and drop
+                      <p className="mb-0.5 text-[14.5px] text-cream-dim">
+                        <span className="font-semibold text-cream">Click to upload</span> or drag and drop
                       </p>
-                      <p style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                        PDF, TXT, or Markdown — up to 10MB
-                      </p>
+                      <p className="text-meta text-dim">PDF, TXT, or Markdown — up to 10MB</p>
                     </>
                   )}
                 </div>
@@ -289,52 +229,29 @@ export default function FlashcardsPage() {
 
               {/* Mode 2 — Enter Topic */}
               {mode === "topic" && (
-                <div style={{ marginBottom: 20 }}>
-                  <label className="sect-num" style={{ fontSize: 9, display: "block", marginBottom: 8 }}>
-                    TOPIC
-                  </label>
+                <div className="mb-5">
+                  <label htmlFor="flashcards-topic-input" className="label mb-2 block">Topic</label>
                   <input
                     id="flashcards-topic-input"
                     value={topic}
                     onChange={(e) => setTopic(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter" && canGenerate) handleGenerate(); }}
                     placeholder="e.g. Photosynthesis, Binary Trees, World War II causes..."
-                    style={{
-                      width: "100%",
-                      background: "transparent",
-                      border: "none",
-                      borderBottom: "1px solid var(--border-strong)",
-                      color: "var(--cream)",
-                      fontFamily: "var(--font-head)",
-                      fontSize: 18,
-                      padding: "8px 0",
-                      outline: "none",
-                    }}
+                    className="input-line"
                   />
                 </div>
               )}
 
               {/* Count selector */}
-              <div style={{ marginBottom: 20 }}>
-                <label className="sect-num" style={{ fontSize: 9, display: "block", marginBottom: 8 }}>
-                  NUMBER OF FLASHCARDS
-                </label>
-                <div style={{ display: "flex", gap: 3 }}>
+              <div className="mb-5">
+                <div className="label mb-2">Number of flashcards</div>
+                <div className="flex gap-1">
                   {[10, 20, 30].map((n) => (
                     <button
                       key={n}
                       id={`flashcard-count-${n}`}
                       onClick={() => setCardCount(n)}
-                      style={{
-                        padding: "6px 20px",
-                        fontSize: 11,
-                        fontFamily: "var(--font-mono)",
-                        color: cardCount === n ? "#0a0a0c" : "var(--text-muted)",
-                        background: cardCount === n ? "var(--cream)" : "transparent",
-                        border: `1px solid ${cardCount === n ? "var(--cream)" : "var(--border-strong)"}`,
-                        cursor: "pointer",
-                        transition: "all .12s",
-                      }}
+                      className={`seg px-5 ${cardCount === n ? "is-active" : ""}`}
                     >
                       {n}
                     </button>
@@ -343,52 +260,24 @@ export default function FlashcardsPage() {
               </div>
 
               {/* Error */}
-              {error && (
-                <div style={{
-                  marginBottom: 16,
-                  padding: "10px 14px",
-                  border: "1px solid rgba(239,68,68,0.3)",
-                  background: "rgba(239,68,68,0.05)",
-                  fontSize: 12,
-                  color: "rgba(239,68,68,0.9)",
-                  fontFamily: "var(--font-mono)",
-                }}>
-                  {error}
-                </div>
-              )}
+              {error && <div className="alert-error mb-4">{error}</div>}
 
               {/* Generate button */}
               <button
                 id="flashcards-generate-btn"
                 onClick={handleGenerate}
                 disabled={!canGenerate}
-                style={{
-                  width: "100%",
-                  padding: "13px",
-                  background: canGenerate ? "var(--cream)" : "rgba(237,232,220,0.15)",
-                  color: canGenerate ? "#0a0a0c" : "var(--text-dim)",
-                  fontSize: 11,
-                  fontFamily: "var(--font-mono)",
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase",
-                  border: "none",
-                  cursor: canGenerate ? "pointer" : "not-allowed",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  transition: "all .15s",
-                }}
+                className="btn btn-primary btn-block py-[13px]"
               >
                 {loadingState === "loading" ? (
                   <>
-                    <span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>◌</span>
+                    <span className="spin-inline">◌</span>
                     Generating…
                   </>
                 ) : (
                   <>
                     Generate flashcards →
-                    <span style={{ fontSize: 9, opacity: 0.5 }}>/flashcard</span>
+                    <span className="font-mono text-[11px] opacity-50">/flashcard</span>
                   </>
                 )}
               </button>
@@ -398,63 +287,26 @@ export default function FlashcardsPage() {
 
           {/* Output area */}
           {loadingState === "loading" && (
-            <div style={{
-              border: "1px solid var(--border)",
-              padding: "48px 24px",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 12,
-              background: "rgba(237,232,220,0.01)",
-            }}>
-              <div style={{
-                width: 32, height: 32, border: "1px solid rgba(237,232,220,0.3)",
-                borderTopColor: "var(--cream)", borderRadius: "50%",
-                animation: "spin 1s linear infinite",
-              }} />
-              <p style={{ fontSize: 12, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
-                Generating {cardCount} flashcards…
-              </p>
+            <div className="loading-box">
+              <div className="spinner" />
+              <p className="text-meta">Generating {cardCount} flashcards…</p>
             </div>
           )}
 
           {flashcards && flashcards.length > 0 && loadingState === "success" && (
-            <div style={{ border: "1px solid var(--border-strong)", position: "relative", background: "rgba(237,232,220,0.015)" }}>
-              <CornerTicks size={8} offset={0} color="rgba(237,232,220,0.4)" />
-              <div style={{
-                padding: "12px 20px", borderBottom: "1px solid var(--border)",
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span className="sect-num">§ GENERATED — {flashcards.length} CARDS</span>
+            <div className="panel panel-tinted">
+              <CornerTicks />
+              <div className="panel-head justify-between px-5">
+                <div className="flex items-center gap-2.5">
+                  <span className="label">§ Generated — {flashcards.length} cards</span>
                   <AgentBadge agent="flashcard" />
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  {memoryUpdated && (
-                    <span style={{ fontSize: 10, color: "rgba(237,232,220,0.5)", fontFamily: "var(--font-mono)" }}>
-                      ✓ Saved to memory
-                    </span>
-                  )}
-                  <button
-                    onClick={handleReset}
-                    style={{
-                      fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)",
-                      background: "transparent", border: "none", cursor: "pointer",
-                      letterSpacing: "0.08em", textTransform: "uppercase",
-                    }}
-                  >
-                    Clear
-                  </button>
+                <div className="flex items-center gap-3">
+                  {memoryUpdated && <span className="text-meta">✓ Saved to memory</span>}
+                  <button onClick={handleReset} className="btn btn-tertiary btn-sm">Clear</button>
                 </div>
               </div>
-              <div style={{
-                padding: "24px",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                minHeight: 500,
-              }}>
+              <div className="flex min-h-[500px] flex-col items-center justify-center p-6">
                 <FlashcardDeck flashcards={flashcards} />
               </div>
             </div>
@@ -462,9 +314,6 @@ export default function FlashcardsPage() {
 
         </div>
       </div>
-
-      {/* Spin keyframe */}
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </DashboardLayout>
   );
 }

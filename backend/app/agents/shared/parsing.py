@@ -47,7 +47,12 @@ def clean_flashcards(items: List[Any]) -> List[dict]:
         question = str(item.get("question", "")).strip()
         answer = str(item.get("answer", "")).strip()
         if question and answer:
-            cards.append({"question": question, "answer": answer})
+            card = {"question": question, "answer": answer}
+            # Cards made from an uploaded document cite where they came from.
+            source = str(item.get("source") or "").strip().strip("[]").strip()
+            if source and len(source) <= 40:
+                card["source"] = source
+            cards.append(card)
     return cards
 
 

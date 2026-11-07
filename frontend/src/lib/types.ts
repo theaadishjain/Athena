@@ -3,6 +3,8 @@
 export interface Flashcard {
   question: string;
   answer: string;
+  /** Where the answer comes from, e.g. "p. 12", for cards made from a file. */
+  source?: string | null;
 }
 
 export interface QuizQuestion {

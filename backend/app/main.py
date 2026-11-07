@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.chat import router as chat_router
 from app.api.memory import router as memory_router
 from app.api.plan import router as plan_router
+from app.api.quiz import router as quiz_router
 from app.api.summarize import router as summarize_router
 from app.api.sessions import router as sessions_router
 from app.core.config import get_settings
@@ -33,6 +34,7 @@ app.include_router(summarize_router)
 app.include_router(plan_router)
 app.include_router(memory_router)
 app.include_router(sessions_router)
+app.include_router(quiz_router)
 
 
 @app.get("/health")

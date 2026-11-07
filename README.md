@@ -45,9 +45,9 @@ Unlike ChatGPT and similar tools, Athena **remembers you permanently** using vec
 - **6 Specialist Agents** via LangGraph — Coordinator, Advisor, Planner, Summarizer, Flashcard, Quiz
 - **Persistent Vector Memory** — MemPalace + ChromaDB, namespaced by Clerk userId
 - **Real-time SSE Streaming** — tokens are streamed from the model as they are generated
-- **Interactive Flashcards** — 10 / 20 / 30 flip cards generated from any topic
-- **MCQ Quiz** — 5 questions with instant feedback and final score
-- **Document Intelligence** — PDF, TXT, MD upload → structured summary + revision checklist
+- **Interactive Flashcards** — 10 / 20 / 30 flip cards from any topic, or from a whole uploaded file (cards spread across every part, each citing its page); one click from a Notes summary too
+- **MCQ Quiz** — 5 questions with instant feedback and final score; scores are saved, missed questions become weak areas, and the next quiz targets them
+- **Document Intelligence** — PDF, TXT, MD upload → the whole document is read (long files are noted in parallel parts, then merged) into a structured summary with page / line citations and a revision checklist
 - **Study Plan Generator** — session-based day-by-day exam preparation
 - **Conversation context** — the last few messages of a chat are sent with each request, so follow-ups like "explain more" work
 - **Cross-device Session History** — all chats (including flashcards and quizzes), notes, and plans sync via Clerk auth
@@ -298,9 +298,9 @@ All requests route through a single `/chat` endpoint. The Coordinator detects in
 |---|---|---|
 | **Advisor** | explain, what/why/how questions, `/explain`, `/solve` (default) | Streaming text (brief/detailed auto-mode) |
 | **Planner** | plan, schedule, timetable, deadline, exam + a time frame ("in 3 days", "next week"), `/plan` | Day-by-day study schedule |
-| **Summarizer** | /notes page + file upload | Structured summary + checklist |
-| **Flashcard** | flashcard(s), make cards, memorize, `/flashcards` | 10/20/30 Q&A flip cards |
-| **Quiz** | quiz, quiz me, test me, mcq, practice questions, `/quiz` | 5 MCQ with scoring |
+| **Summarizer** | /notes page + file upload | Structured summary with `[p. N]` citations + checklist |
+| **Flashcard** | flashcard(s), make cards, memorize, `/flashcards`; Flashcards page / Notes with a file | 10/20/30 Q&A flip cards (with `p. N` sources from files) |
+| **Quiz** | quiz, quiz me, test me, mcq, practice questions, `/quiz` | 5 MCQ with scoring, aimed at your weak areas |
 
 ### Memory write ownership (strictly enforced)
 
@@ -310,7 +310,7 @@ All requests route through a single `/chat` endpoint. The Coordinator detects in
 | Planner | `past_chats`, `preferences` |
 | Summarizer | `note_summaries`, `weak_subjects` |
 | Flashcard | `past_chats` |
-| Quiz | `past_chats` |
+| Quiz | `past_chats` (finished quizzes: `POST /quiz/results` writes missed questions to `weak_subjects`) |
 
 ---
 
@@ -324,7 +324,10 @@ POST /chat                          → SSE stream: `token` events, then one `do
                                       (saves both messages; `persist: false` for one-off calls)
 POST /plan                          → UnifiedResponse JSON
 POST /summarize                     → multipart/form-data
-POST /extract                       → multipart/form-data → { filename, text } (used by Flashcards for PDFs)
+POST /flashcards/document           → multipart/form-data (file, count) → UnifiedResponse with flashcards from the whole file
+POST /extract                       → multipart/form-data → { filename, text } (plain-text preview, first 8,000 chars)
+POST /quiz/results                  → save a finished quiz { topic, score, total, missed[] }; misses → weak area
+GET  /quiz/results                  → recent quiz attempts
 GET  /memory/profile                → { preferences, weak_subjects, recent_topics }
 GET  /sessions                      → list user sessions
 POST /sessions                      → create session
@@ -398,7 +401,7 @@ DELETE /sessions/empty              → cleanup empty sessions
 - [ ] Voice transcription (Whisper) — lecture recording → notes
 - [ ] Export to Notion
 - [ ] Mobile app (React Native)
-- [ ] Quiz performance history and weak subject analytics
+- [ ] Quiz performance analytics on the dashboard (scores are already saved)
 - [ ] Onboarding flow — personalize from day one
 
 ---

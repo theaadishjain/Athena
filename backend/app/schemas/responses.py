@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class Flashcard(BaseModel):
     question: str
     answer: str
+    source: str | None = None  # e.g. "p. 12" for cards made from a document
 
 class QuizQuestion(BaseModel):
     question: str

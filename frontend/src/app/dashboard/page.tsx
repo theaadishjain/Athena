@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import DashboardLayout from "@/components/ui/DashboardLayout";
 import AgentBadge from "@/components/ui/AgentBadge";
+import Skeleton, { SkeletonRows } from "@/components/ui/Skeleton";
 import type { ChatSessionMeta, ChatMessage } from "@/lib/types";
 import {
   listSessions,
@@ -38,6 +39,19 @@ function formatHeaderDate(): string {
   return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} · ${days[d.getDay()]}`;
 }
 
+/** "Weak area: photosynthesis (quiz score 3/5). Missed: …" -> "photosynthesis · 3/5" */
+function formatWeakArea(entry: string): string {
+  const quiz = entry.match(/^Weak area:\s*(.+?)\s*\(quiz score (\d+)\/(\d+)\)/);
+  if (quiz) return `${quiz[1]} · ${quiz[2]}/${quiz[3]}`;
+  return entry.replace(/^Challenging topic:\s*/, "");
+}
+
+type MemoryProfile = {
+  preferences: string[];
+  weak_subjects: string[];
+  recent_topics: string[];
+};
+
 export default function DashboardPage() {
   const router = useRouter();
   const { getToken } = useAuth();
@@ -47,12 +61,10 @@ export default function DashboardPage() {
 
   const [recentMessages, setRecentMessages] = useState<ChatMessage[]>([]);
   const [recentSession, setRecentSession] = useState<ChatSessionMeta | null>(null);
+  const [activityLoaded, setActivityLoaded] = useState(false);
 
-  const [memoryProfile, setMemoryProfile] = useState<{
-    preferences: string[];
-    weak_subjects: string[];
-    recent_topics: string[];
-  } | null>(null);
+  const [memoryProfile, setMemoryProfile] = useState<MemoryProfile | null>(null);
+  const [profileLoaded, setProfileLoaded] = useState(false);
 
   const summaryFetchedRef = useRef(false);
 
@@ -61,7 +73,8 @@ export default function DashboardPage() {
     async function fetchSessions() {
       try {
         const token = await getToken();
-        if (!token || cancelled) return;
+        if (cancelled) return;
+        if (!token) { setSessionsLoaded(true); return; }
         const data = await listSessions(token);
         if (!cancelled) {
           setSessions(data);
@@ -78,7 +91,12 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!sessionsLoaded) return;
     if (summaryFetchedRef.current) return;
-    if (sessions.length === 0) return;
+    if (sessions.length === 0) {
+      // Nothing to look up: show the empty states straight away.
+      setActivityLoaded(true);
+      setProfileLoaded(true);
+      return;
+    }
 
     summaryFetchedRef.current = true;
     const mostRecent = sessions[0];
@@ -91,15 +109,14 @@ export default function DashboardPage() {
         const msgs = await getSessionMessages(mostRecent.id, token);
         setRecentMessages(msgs.filter((m) => m.role === "user").slice(-4));
       } catch { /* silent */ }
+      finally { setActivityLoaded(true); }
     }
     fetchRecentActivity();
 
-    getToken().then((tok) => {
-      if (!tok) return;
-      getMemoryProfile(tok)
-        .then(setMemoryProfile)
-        .catch(() => {});
-    });
+    getToken()
+      .then((tok) => (tok ? getMemoryProfile(tok).then(setMemoryProfile) : undefined))
+      .catch(() => {})
+      .finally(() => setProfileLoaded(true));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionsLoaded]);
 
@@ -111,7 +128,9 @@ export default function DashboardPage() {
   const filteredWeakSubjects = memoryProfile?.weak_subjects
     .map(s => s.replace(/\*\*/g, ""))
     .filter(s => s.length >= 10)
-    .filter(s => !/my name|nickname|hello|hi/i.test(s)) || [];
+    // Word boundaries: a bare /hi/ also hid "Machine learning", "history"…
+    .filter(s => !/\b(?:my name|nickname|hello|hi)\b/i.test(s))
+    .map(formatWeakArea) || [];
 
   const filteredTopics = memoryProfile?.recent_topics
     .filter(t => t.startsWith("Topic:"))
@@ -120,17 +139,32 @@ export default function DashboardPage() {
 
   const greeting = getGreeting();
 
+  const profileCells: { title: string; icon: React.ReactNode; items: string[]; max: number; empty: string; strong?: boolean }[] = [
+    {
+      title: "Study style", items: filteredPreferences.slice(0, 4), max: 50, empty: "Still learning…",
+      icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" /></svg>,
+    },
+    {
+      title: "Weak areas", items: filteredWeakSubjects.slice(0, 4), max: 40, empty: "None flagged yet", strong: true,
+      icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
+    },
+    {
+      title: "Recent topics", items: filteredTopics, max: 40, empty: "No topics yet",
+      icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>,
+    },
+  ];
+
   return (
     <DashboardLayout>
-      <div style={{ flex: 1, minWidth: 0, height: "100%", overflow: "auto", position: "relative" }}>
+      <div className="page-scroll">
 
         {/* Subtle orbital backdrop */}
-        <div style={{ position: "absolute", top: 0, right: 0, width: 720, height: 720, pointerEvents: "none", zIndex: 0 }}>
-          <div style={{
-            position: "absolute", width: 900, height: 900, top: -300, right: -200,
+        <div className="pointer-events-none absolute top-0 right-0 z-0 h-[720px] w-[720px]">
+          <div className="absolute" style={{
+            width: 900, height: 900, top: -300, right: -200,
             background: "radial-gradient(circle, rgba(237,232,220,0.04), transparent 70%)",
           }} />
-          <svg width="720" height="720" viewBox="0 0 720 720" style={{ position: "absolute", inset: 0, opacity: 0.5 }}>
+          <svg width="720" height="720" viewBox="0 0 720 720" className="absolute inset-0 opacity-50">
             <g style={{ transformOrigin: "460px 260px", animation: "athenaSpin 180s linear infinite" }}>
               {[180, 260, 340].map((r, i) => (
                 <ellipse key={i} cx="460" cy="260" rx={r} ry={r * 0.35}
@@ -141,197 +175,153 @@ export default function DashboardPage() {
           </svg>
         </div>
 
-        <div style={{ position: "relative", zIndex: 1, padding: "34px 40px" }}>
+        <div className="page-pad">
 
           {/* Running header */}
-          <div style={{
-            display: "flex", justifyContent: "space-between", alignItems: "baseline",
-            borderBottom: "1px solid var(--border)", paddingBottom: 12, marginBottom: 32,
-          }}>
-            <span className="sect-num">§ DASHBOARD</span>
-            <span className="sect-num">{formatHeaderDate()}</span>
-            <span className="sect-num">ATHENA · MMXXVI</span>
+          <div className="running-head">
+            <span className="label">§ Dashboard</span>
+            <span className="label">{formatHeaderDate()}</span>
+            <span className="label">Athena · MMXXVI</span>
           </div>
 
-          {/* Greeting block — full width */}
-          <div style={{ paddingTop: 4, marginBottom: 32 }}>
-              <div className="eyebrow" style={{ marginBottom: 16 }}>
-                {sessions.length > 0 && recentSession
-                  ? <><span style={{ color: "var(--cream)" }}>{recentSession.title.slice(0, 40)}</span> · last session</>
+          {/* Greeting block */}
+          <div className="mb-8 pt-1">
+            <div className="eyebrow mb-4">
+              {!sessionsLoaded
+                ? <Skeleton width={220} height={11} />
+                : sessions.length > 0 && recentSession
+                  ? <><span className="text-cream">{recentSession.title.slice(0, 40)}</span> · last session</>
                   : "Start your first session today"
-                }
-              </div>
-              <h1 style={{
-                fontSize: 72, lineHeight: 0.95,
-                fontFamily: "var(--font-head)", fontWeight: 400,
-                letterSpacing: "-0.02em", color: "var(--cream)",
-                marginBottom: 18,
-              }}>
-                {greeting},<br />
-                <em className="serif-i">student.</em>
-              </h1>
-              <p style={{ fontSize: 15, lineHeight: 1.5, color: "var(--cream-dim)", maxWidth: 480, marginBottom: 24, fontWeight: 300 }}>
-                {sessions.length > 0
-                  ? `You have ${sessions.length} chat session${sessions.length > 1 ? "s" : ""} saved. Pick up where you left off or start something new.`
-                  : "Ask anything. Athena will help you study smarter, summarize your notes, and build a study plan."
-                }
-              </p>
-              <div style={{ display: "flex", gap: 10 }}>
-                <button
-                  onClick={() => { sessionStorage.removeItem("athena_current_session"); router.push("/chat"); }}
-                  className="btn btn-primary"
-                  style={{ fontSize: 11, padding: "13px 20px", fontFamily: "var(--font-mono)", letterSpacing: "0.08em", textTransform: "uppercase" }}
-                >
-                  {sessions.length > 0 ? "Resume session →" : "Start chatting →"}
-                </button>
-                <button
-                  onClick={() => router.push("/notes")}
-                  className="btn btn-ghost"
-                  style={{ fontSize: 11, padding: "13px 18px", fontFamily: "var(--font-mono)", letterSpacing: "0.08em", textTransform: "uppercase" }}
-                >
-                  Upload lecture
-                </button>
-              </div>
+              }
+            </div>
+            <h1 className="h-xl mb-[18px]">
+              {greeting},<br />
+              <em className="serif-i">student.</em>
+            </h1>
+            <div className="text-body mb-6 max-w-[500px]">
+              {!sessionsLoaded ? (
+                <div className="flex flex-col gap-2 py-1">
+                  <Skeleton width="90%" height={13} />
+                  <Skeleton width="60%" height={13} />
+                </div>
+              ) : sessions.length > 0
+                ? `You have ${sessions.length} chat session${sessions.length > 1 ? "s" : ""} saved. Pick up where you left off or start something new.`
+                : "Ask anything. Athena will help you study smarter, summarize your notes, and build a study plan."
+              }
+            </div>
+            <div className="flex gap-2.5">
+              <button
+                onClick={() => { sessionStorage.removeItem("athena_current_session"); router.push("/chat"); }}
+                className="btn btn-primary"
+              >
+                {sessions.length > 0 ? "Resume session →" : "Start chatting →"}
+              </button>
+              <button onClick={() => router.push("/notes")} className="btn btn-ghost">
+                Upload lecture
+              </button>
+            </div>
           </div>
 
           {/* Memory Profile */}
-          <div style={{ border: "1px solid var(--border-strong)", marginBottom: 28 }}>
-            <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
-              <span className="sect-num">§ MEMORY PROFILE</span>
-              <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>
-                what Athena remembers about how you learn
-              </span>
-              <span className="sect-num" style={{ marginLeft: "auto", fontSize: 9 }}>UPDATED THIS SESSION</span>
+          <div className="panel mb-7">
+            <div className="panel-head">
+              <span className="label">§ Memory profile</span>
+              <span className="text-meta">what Athena remembers about how you learn</span>
+              <span className="label ml-auto">Updated this session</span>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)" }}>
-              {/* Study style */}
-              <div style={{ padding: "18px 20px", borderRight: "1px solid var(--border)", minHeight: 140 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, color: "var(--cream)" }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" /></svg>
-                  <span className="sect-num" style={{ fontSize: 10, color: "var(--cream)" }}>STUDY STYLE</span>
+            <div className="grid grid-cols-4">
+              {profileCells.map((cell) => (
+                <div key={cell.title} className="min-h-[140px] border-r border-line px-5 py-[18px]">
+                  <div className="mb-3 flex items-center gap-2 text-cream">
+                    {cell.icon}
+                    <span className="label label-strong">{cell.title}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {!profileLoaded ? (
+                      <>
+                        <Skeleton width="80%" height={24} />
+                        <Skeleton width="55%" height={24} />
+                      </>
+                    ) : cell.items.length > 0 ? cell.items.map((t, i) => (
+                      <span key={i} className={`tag ${cell.strong ? "tag-strong" : ""}`}>
+                        {t.slice(0, cell.max)}{t.length > cell.max ? "…" : ""}
+                      </span>
+                    )) : (
+                      <span className="text-meta text-dim">{cell.empty}</span>
+                    )}
+                  </div>
                 </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                  {filteredPreferences.length > 0 ? filteredPreferences.slice(0, 4).map((p, i) => (
-                    <span key={i} style={{ fontSize: 11, padding: "4px 9px", border: "1px solid var(--cream-ghost)", color: "var(--cream-dim)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>
-                      {p.slice(0, 50)}{p.length > 50 ? "…" : ""}
-                    </span>
-                  )) : (
-                    <span style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>Still learning…</span>
-                  )}
-                </div>
-              </div>
-              {/* Weak areas */}
-              <div style={{ padding: "18px 20px", borderRight: "1px solid var(--border)", minHeight: 140 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, color: "var(--cream)" }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                  <span className="sect-num" style={{ fontSize: 10, color: "var(--cream)" }}>WEAK AREAS</span>
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                  {filteredWeakSubjects.length > 0 ? filteredWeakSubjects.slice(0, 4).map((s, i) => (
-                    <span key={i} style={{ fontSize: 11, padding: "4px 9px", border: "1px solid var(--cream)", color: "var(--cream)", fontFamily: "var(--font-head)" }}>
-                      {s.slice(0, 40)}{s.length > 40 ? "…" : ""}
-                    </span>
-                  )) : (
-                    <span style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>None flagged yet</span>
-                  )}
-                </div>
-              </div>
-              {/* Recent topics */}
-              <div style={{ padding: "18px 20px", borderRight: "1px solid var(--border)", minHeight: 140 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, color: "var(--cream)" }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
-                  <span className="sect-num" style={{ fontSize: 10, color: "var(--cream)" }}>RECENT TOPICS</span>
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                  {filteredTopics.length > 0 ? filteredTopics.map((t, i) => (
-                    <span key={i} style={{ fontSize: 11, padding: "4px 9px", border: "1px solid var(--cream-ghost)", color: "var(--cream-dim)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>
-                      {t.slice(0, 40)}{t.length > 40 ? "…" : ""}
-                    </span>
-                  )) : (
-                    <span style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>No topics yet</span>
-                  )}
-                </div>
-              </div>
+              ))}
               {/* Sessions */}
-              <div style={{ padding: "18px 20px", minHeight: 140 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, color: "var(--cream)" }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                  <span className="sect-num" style={{ fontSize: 10, color: "var(--cream)" }}>SESSIONS</span>
+              <div className="min-h-[140px] px-5 py-[18px]">
+                <div className="mb-3 flex items-center gap-2 text-cream">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  <span className="label label-strong">Sessions</span>
                 </div>
-                <div>
-                  <div style={{ fontSize: 32, fontFamily: "var(--font-head)", fontStyle: "italic", color: "var(--cream)", lineHeight: 1, marginBottom: 6 }}>
-                    {sessions.length}
-                  </div>
-                  <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-                    total chats
-                  </div>
-                </div>
+                {!sessionsLoaded ? (
+                  <Skeleton width={48} height={34} />
+                ) : (
+                  <div className="serif-i mb-1.5 text-[34px] leading-none">{sessions.length}</div>
+                )}
+                <div className="label mt-1.5">total chats</div>
               </div>
             </div>
           </div>
 
           {/* Quick tiles */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderTop: "1px solid var(--border)", marginBottom: 28 }}>
+          <div className="mb-7 grid grid-cols-4 border-t border-line">
             {[
               { label: "Chat", sub: `${sessions.length} sessions`, agent: "Advisor", href: "/chat",
                 icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> },
-              { label: "Notes", sub: "summarize files", agent: "Summarizer", href: "/notes",
+              { label: "Notes", sub: "Summarize files", agent: "Summarizer", href: "/notes",
                 icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
-              { label: "Flashcards", sub: "coming soon", agent: "Summarizer", href: null,
+              { label: "Flashcards", sub: "10 / 20 / 30 cards", agent: "Flashcard", href: "/flashcards",
                 icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="6" width="14" height="14" rx="1"/><path d="M7 3h12a2 2 0 0 1 2 2v12"/></svg> },
-              { label: "Study plan", sub: "coming soon", agent: "Planner", href: null,
+              { label: "Study plan", sub: "Exam schedule", agent: "Planner", href: "/studyplan",
                 icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="4" width="18" height="18" rx="1"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> },
-            ].map((tile, i) => (
+            ].map((tile) => (
               <QuickTile
                 key={tile.label}
                 label={tile.label}
                 sub={tile.sub}
                 agent={tile.agent}
                 icon={tile.icon}
-                border={i > 0}
-                onClick={tile.href ? () => router.push(tile.href!) : undefined}
+                onClick={() => router.push(tile.href)}
               />
             ))}
           </div>
 
           {/* Recent Activity + Agents at work */}
-          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 28, marginBottom: 48 }}>
+          <div className="mb-12 grid grid-cols-[1.4fr_1fr] gap-7">
 
             {/* Recent Activity */}
-            <div style={{ border: "1px solid var(--border-strong)" }}>
-              <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
-                <span className="sect-num">§ RECENT ACTIVITY</span>
-                <span className="sect-num" style={{ marginLeft: "auto" }}>LAST SESSION</span>
+            <div className="panel">
+              <div className="panel-head">
+                <span className="label">§ Recent activity</span>
+                <span className="label ml-auto">Last session</span>
               </div>
-              {recentMessages.length === 0 ? (
-                <div style={{ padding: "24px 18px" }}>
-                  <p style={{ fontSize: 13, color: "var(--text-dim)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>
-                    No recent activity yet. Start a chat to see your study history here.
-                  </p>
-                </div>
+              {!activityLoaded ? (
+                <SkeletonRows rows={3} className="px-[18px] py-1.5" />
+              ) : recentMessages.length === 0 ? (
+                <p className="text-note px-[18px] py-6">
+                  No recent activity yet. Start a chat to see your study history here.
+                </p>
               ) : (
-                <div>
+                <div className="divider-row">
                   {recentMessages.map((msg, i) => (
                     <div key={i}
                       onClick={() => recentSession && router.push(`/chat?sid=${recentSession.id}`)}
-                      style={{
-                        display: "grid", gridTemplateColumns: "1fr 60px",
-                        gap: 16, padding: "12px 18px",
-                        borderBottom: i < recentMessages.length - 1 ? "1px solid var(--border)" : "none",
-                        cursor: "pointer", transition: "background .15s", alignItems: "center",
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(237,232,220,0.02)")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                      className="row-hover grid grid-cols-[1fr_70px] items-center gap-4 px-[18px] py-3"
                     >
-                      <div>
-                        <div style={{ fontSize: 13, color: "var(--cream)", fontFamily: "var(--font-head)", marginBottom: 2, letterSpacing: "0.005em" }}>
+                      <div className="min-w-0">
+                        <div className="mb-0.5 truncate text-[14.5px] text-cream">
                           {msg.content.slice(0, 100)}{msg.content.length > 100 ? "…" : ""}
                         </div>
                         {recentSession && (
-                          <div className="sect-num" style={{ fontSize: 9 }}>{recentSession.title.slice(0, 40)}</div>
+                          <div className="text-meta truncate text-dim">{recentSession.title.slice(0, 40)}</div>
                         )}
                       </div>
-                      <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", letterSpacing: "0.04em", textAlign: "right" }}>
+                      <div className="text-meta text-right">
                         {recentSession ? relativeTime(recentSession.created_at) : ""}
                       </div>
                     </div>
@@ -341,27 +331,23 @@ export default function DashboardPage() {
             </div>
 
             {/* Agents at work */}
-            <div style={{ border: "1px solid var(--border-strong)" }}>
-              <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border)" }}>
-                <span className="sect-num">§ AGENTS · THIS SESSION</span>
+            <div className="panel">
+              <div className="panel-head">
+                <span className="label">§ Agents · this session</span>
               </div>
-              <div>
+              <div className="divider-row">
                 {[
                   { agent: "Advisor", pct: 68, stat: "Q&A · conversations" },
-                  { agent: "Summarizer", pct: 42, stat: "docs · cards generated" },
-                  { agent: "Planner", pct: 28, stat: "plans · schedules" },
-                  { agent: "Coordinator", pct: 92, stat: "always routing" },
-                ].map((a, i) => (
-                  <div key={a.agent} style={{ padding: "14px 18px", borderBottom: i < 3 ? "1px solid var(--border)" : "none" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                  { agent: "Summarizer", pct: 42, stat: "Docs · cards generated" },
+                  { agent: "Planner", pct: 28, stat: "Plans · schedules" },
+                  { agent: "Coordinator", pct: 92, stat: "Always routing" },
+                ].map((a) => (
+                  <div key={a.agent} className="px-[18px] py-3.5">
+                    <div className="mb-2 flex items-center gap-2.5">
                       <AgentBadge agent={a.agent} />
                     </div>
-                    <div style={{ height: 2, background: "rgba(237,232,220,0.06)", marginBottom: 6 }}>
-                      <div style={{ width: `${a.pct}%`, height: "100%", background: "var(--cream)" }} />
-                    </div>
-                    <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", letterSpacing: "0.04em" }}>
-                      {a.stat}
-                    </div>
+                    <div className="progress mb-1.5"><span style={{ width: `${a.pct}%` }} /></div>
+                    <div className="text-meta">{a.stat}</div>
                   </div>
                 ))}
               </div>
@@ -369,10 +355,10 @@ export default function DashboardPage() {
           </div>
 
           {/* Footer colophon */}
-          <div style={{ paddingTop: 16, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between" }}>
-            <span className="sect-num">{sessions.length} SESSIONS · YOUR STUDY SPACE</span>
-            <span className="sect-num">STREAK — KEEP GOING</span>
-            <span className="sect-num">ATHENA · MMXXVI</span>
+          <div className="flex justify-between border-t border-line pt-4">
+            <span className="label">{sessions.length} sessions · your study space</span>
+            <span className="label">Streak — keep going</span>
+            <span className="label">Athena · MMXXVI</span>
           </div>
 
         </div>
@@ -382,48 +368,25 @@ export default function DashboardPage() {
 }
 
 function QuickTile({
-  label, sub, agent, icon, border, onClick,
+  label, sub, agent, icon, onClick,
 }: {
   label: string;
   sub: string;
   agent: string;
   icon: React.ReactNode;
-  border?: boolean;
   onClick?: () => void;
 }) {
-  const [hover, setHover] = useState(false);
   return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        padding: "22px 20px 20px",
-        borderRight: "1px solid var(--border)",
-        borderBottom: "1px solid var(--border)",
-        borderLeft: border ? undefined : "none",
-        background: hover && onClick ? "rgba(237,232,220,0.03)" : "transparent",
-        cursor: onClick ? "pointer" : "default",
-        transition: "all .18s",
-        position: "relative", minHeight: 120,
-        display: "flex", flexDirection: "column", justifyContent: "space-between",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ color: "var(--cream)" }}>{icon}</div>
+    <div onClick={onClick} className={`tile ${onClick ? "is-link" : ""}`}>
+      <div className="flex items-center justify-between">
+        <div className="text-cream">{icon}</div>
         <AgentBadge agent={agent} />
       </div>
       <div>
-        <div style={{ fontSize: 26, fontFamily: "var(--font-head)", fontStyle: "italic", color: "var(--cream)", letterSpacing: "-0.005em", marginBottom: 4, lineHeight: 1 }}>
-          {label}
-        </div>
-        <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-          {sub}
-        </div>
+        <div className="serif-i mb-1 text-[26px] leading-none">{label}</div>
+        <div className="text-meta">{sub}</div>
       </div>
-      {onClick && (
-        <div style={{ position: "absolute", bottom: 10, right: 10, fontSize: 11, color: hover ? "var(--cream)" : "var(--text-dim)", transition: "color .15s" }}>→</div>
-      )}
+      {onClick && <div className="tile-arrow">→</div>}
     </div>
   );
 }

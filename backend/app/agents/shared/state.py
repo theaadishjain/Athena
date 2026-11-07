@@ -22,3 +22,9 @@ class AcademicState(TypedDict, total=False):
     error: Optional[str]
     flashcards: Optional[List[dict]]
     quiz: Optional[List[dict]]
+    # An uploaded document split into citable segments (see services.ingest
+    # ParsedDocument). When present, the summarizer summarizes all of it with
+    # page / line citations instead of summarizing `input`.
+    document: Optional[dict]
+    # How many flashcards to make from `document` (the Flashcards page's 10/20/30).
+    requested_count: Optional[int]

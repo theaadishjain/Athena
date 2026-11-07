@@ -3,17 +3,19 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { UserButton, useUser, useAuth } from "@clerk/nextjs";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useSyncExternalStore } from "react";
 import type { ChatSessionMeta } from "@/lib/types";
 import { listSessions, deleteSession } from "@/lib/api";
 import { setCurrentSession } from "@/lib/session";
+import Logo from "./Logo";
+import { SkeletonRows } from "./Skeleton";
 
 const NAV_ITEMS = [
   {
     href: "/dashboard",
     label: "Dashboard",
     icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2z"/>
       </svg>
     ),
@@ -22,7 +24,7 @@ const NAV_ITEMS = [
     href: "/chat",
     label: "Chat",
     icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
       </svg>
     ),
@@ -31,7 +33,7 @@ const NAV_ITEMS = [
     href: "/notes",
     label: "Notes",
     icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
         <polyline points="14 2 14 8 20 8"/>
         <line x1="8" y1="13" x2="16" y2="13"/>
@@ -43,7 +45,7 @@ const NAV_ITEMS = [
     href: "/flashcards",
     label: "Flashcards",
     icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="6" width="14" height="14" rx="1"/>
         <path d="M7 3h12a2 2 0 0 1 2 2v12"/>
       </svg>
@@ -53,7 +55,7 @@ const NAV_ITEMS = [
     href: "/studyplan",
     label: "Study plan",
     icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="4" width="18" height="18" rx="1"/>
         <line x1="16" y1="2" x2="16" y2="6"/>
         <line x1="8" y1="2" x2="8" y2="6"/>
@@ -63,20 +65,73 @@ const NAV_ITEMS = [
   },
 ];
 
-const SOON_ITEMS: { label: string; icon: React.ReactNode }[] = [];
+const CURRENT_KEY = "athena_current_session";
+const LEGACY_KEY = "studyco_current_session";
+
+// ── Undoable delete ─────────────────────────────────────────
+// A deleted chat waits here for UNDO_MS before the server delete runs, so it
+// can be taken back. This lives at module level because every page renders
+// its own Sidebar: moving to another page must neither cancel nor lose it.
+
+const UNDO_MS = 5000;
+
+interface PendingDelete {
+  session: ChatSessionMeta;
+  index: number;
+  wasActive: boolean;
+  expiresAt: number;
+  timer: ReturnType<typeof setTimeout>;
+  run: () => Promise<void>;
+}
+
+let store: { pending: PendingDelete | null; version: number } = { pending: null, version: 0 };
+const listeners = new Set<() => void>();
+
+function setPending(pending: PendingDelete | null) {
+  store = { pending, version: store.version + 1 };
+  listeners.forEach((l) => l());
+}
+function bump() {
+  store = { ...store, version: store.version + 1 };
+  listeners.forEach((l) => l());
+}
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+const getStore = () => store;
+const getServerStore = () => store;
+
+/** Run the pending delete now (timer fired, or a newer delete replaced it). */
+function flushPending() {
+  const p = store.pending;
+  if (!p) return;
+  clearTimeout(p.timer);
+  setPending(null);
+  // Refresh lists afterwards; on failure the chat simply reappears.
+  p.run().catch(() => {}).finally(bump);
+}
+
+/** Cancel the pending delete and hand back the chat. */
+function undoPending(): PendingDelete | null {
+  const p = store.pending;
+  if (!p) return null;
+  clearTimeout(p.timer);
+  setPending(null);
+  return p;
+}
+
+// ────────────────────────────────────────────────────────────
 
 function relativeTime(isoString: string): string {
-  const now = Date.now();
-  const then = new Date(isoString).getTime();
-  const diffMs = now - then;
-  const diffMins = Math.floor(diffMs / 60_000);
-  if (diffMins < 1) return "NOW";
-  if (diffMins < 60) return `${diffMins}M`;
+  const diffMins = Math.floor((Date.now() - new Date(isoString).getTime()) / 60_000);
+  if (diffMins < 1) return "now";
+  if (diffMins < 60) return `${diffMins}m`;
   const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}H`;
+  if (diffHours < 24) return `${diffHours}h`;
   const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) return `${diffDays}D`;
-  return `${Math.floor(diffDays / 7)}W`;
+  if (diffDays < 7) return `${diffDays}d`;
+  return `${Math.floor(diffDays / 7)}w`;
 }
 
 export default function Sidebar() {
@@ -85,13 +140,12 @@ export default function Sidebar() {
   const { user } = useUser();
   const { getToken } = useAuth();
   const [sessions, setSessions] = useState<ChatSessionMeta[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const { pending, version } = useSyncExternalStore(subscribe, getStore, getServerStore);
 
   useEffect(() => {
-    const id = sessionStorage.getItem("athena_current_session") ||
-               sessionStorage.getItem("studyco_current_session");
+    const id = sessionStorage.getItem(CURRENT_KEY) || sessionStorage.getItem(LEGACY_KEY);
     setActiveSessionId(id || null);
   }, [pathname]);
 
@@ -100,32 +154,37 @@ export default function Sidebar() {
       const token = await getToken();
       if (!token) return;
       const data = await listSessions(token);
-      setSessions(data.slice(0, 10));
+      const hiddenId = store.pending?.session.id;
+      setSessions(data.filter((s) => s.id !== hiddenId).slice(0, 10));
     } catch { /* silent */ }
+    finally { setLoaded(true); }
   }, [getToken]);
 
-  const cleanupEmpty = useCallback(async () => {
-    try {
-      const token = await getToken();
-      if (!token) return;
-      await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/sessions/empty`,
-        { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }
-      );
-      await fetchSessions();
-    } catch { /* silent */ }
-  }, [getToken, fetchSessions]);
+  // Initial load, and again whenever a delete is committed or undone.
+  useEffect(() => { fetchSessions(); }, [fetchSessions, version]);
 
   useEffect(() => {
-    fetchSessions();
-    cleanupEmpty();
     const interval = setInterval(fetchSessions, 30_000);
     return () => clearInterval(interval);
-  }, [fetchSessions, cleanupEmpty]);
+  }, [fetchSessions]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/sessions/empty`,
+          { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }
+        );
+        await fetchSessions();
+      } catch { /* silent */ }
+    })();
+  }, [getToken, fetchSessions]);
 
   const handleNewChat = useCallback(() => {
-    sessionStorage.removeItem("athena_current_session");
-    sessionStorage.removeItem("studyco_current_session");
+    sessionStorage.removeItem(CURRENT_KEY);
+    sessionStorage.removeItem(LEGACY_KEY);
     setActiveSessionId(null);
     router.push("/chat?new=" + Date.now());
   }, [router]);
@@ -136,25 +195,44 @@ export default function Sidebar() {
     router.push("/chat?sid=" + session.id);
   }, [router]);
 
-  const handleDeleteSession = async (e: React.MouseEvent, sessionId: string) => {
+  const handleDelete = (e: React.MouseEvent, session: ChatSessionMeta) => {
     e.stopPropagation();
     e.preventDefault();
-    setDeletingId(sessionId);
-    try {
-      const token = await getToken();
-      if (!token) return;
-      await deleteSession(sessionId, token);
-      setSessions(prev => prev.filter(s => s.id !== sessionId));
-      const currentId = sessionStorage.getItem("athena_current_session");
-      if (currentId === sessionId) {
-        sessionStorage.removeItem("athena_current_session");
-        router.push("/chat?new=" + Date.now());
-      }
-    } catch {
-      // deletion failed — UI resets via finally block
-    } finally {
-      setDeletingId(null);
+    flushPending(); // one undo at a time: commit any earlier delete now
+
+    const index = sessions.findIndex((s) => s.id === session.id);
+    const wasActive = sessionStorage.getItem(CURRENT_KEY) === session.id;
+    setSessions((prev) => prev.filter((s) => s.id !== session.id));
+
+    setPending({
+      session,
+      index,
+      wasActive,
+      expiresAt: Date.now() + UNDO_MS,
+      timer: setTimeout(flushPending, UNDO_MS),
+      run: async () => {
+        const token = await getToken();
+        if (!token) throw new Error("Auth failed");
+        await deleteSession(session.id, token);
+      },
+    });
+
+    if (wasActive) {
+      sessionStorage.removeItem(CURRENT_KEY);
+      router.push("/chat?new=" + Date.now());
     }
+  };
+
+  const handleUndo = () => {
+    const p = undoPending();
+    if (!p) return;
+    setSessions((prev) => {
+      if (prev.some((s) => s.id === p.session.id)) return prev;
+      const next = [...prev];
+      next.splice(Math.max(0, Math.min(p.index, next.length)), 0, p.session);
+      return next;
+    });
+    if (p.wasActive) handleSessionClick(p.session);
   };
 
   const userInitial = user?.firstName?.[0]?.toUpperCase() ??
@@ -162,214 +240,119 @@ export default function Sidebar() {
   const userName = user?.firstName ? `${user.firstName}${user.lastName ? " " + user.lastName : ""}` : "Student";
 
   return (
-    <aside style={{
-      width: 240,
-      flexShrink: 0,
-      height: "100vh",
-      borderRight: "1px solid var(--border)",
-      background: "rgba(237,232,220,0.012)",
-      display: "flex",
-      flexDirection: "column",
-      padding: "18px 0",
-      position: "sticky",
-      top: 0,
-      zIndex: 40,
-    }}
-    className="hidden md:flex"
-    >
-      {/* Logo */}
-      <div style={{ padding: "2px 18px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
-          <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
-            <circle cx="16" cy="16" r="14.5" stroke="#ede8dc" strokeWidth="1" fill="none" opacity="0.5" />
-            <path d="M16 5 L27 16 L16 27 L5 16 Z" stroke="#ede8dc" strokeWidth="1" fill="none" />
-            <circle cx="16" cy="16" r="3" fill="#ede8dc" />
-            <circle cx="16" cy="16" r="1" fill="#0a0a0c" />
-            <line x1="16" y1="1" x2="16" y2="4" stroke="#ede8dc" strokeWidth="1" />
-            <line x1="16" y1="28" x2="16" y2="31" stroke="#ede8dc" strokeWidth="1" />
-          </svg>
-          <span style={{ fontFamily: "var(--font-head)", fontWeight: 400, fontSize: 15, color: "var(--cream)", lineHeight: 1 }}>
-            Athena
-          </span>
-        </Link>
-        <span className="sect-num" style={{ fontSize: 9 }}>v4.0</span>
-      </div>
+    <>
+      <aside
+        className="hidden md:flex flex-col shrink-0 sticky top-0 z-40 h-screen w-[248px] py-[18px] border-r border-line"
+        style={{ background: "rgba(237,232,220,0.012)" }}
+      >
+        {/* Logo */}
+        <div className="flex items-center justify-between px-[18px] pt-0.5 pb-3.5">
+          <Link href="/" className="no-underline"><Logo /></Link>
+          <span className="label text-[10px]">v4.0</span>
+        </div>
 
-      {/* New Chat */}
-      <div style={{ padding: "0 12px 10px", borderBottom: "1px solid var(--border)", marginBottom: 10 }}>
-        <button
-          id="sidebar-new-chat"
-          onClick={handleNewChat}
-          style={{
-            width: "100%",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "10px 12px",
-            background: "var(--cream)",
-            color: "#0a0a0c",
-            fontSize: 11,
-            fontWeight: 500,
-            fontFamily: "var(--font-mono)",
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            cursor: "pointer",
-            border: "none",
-          }}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0a0a0c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19"/>
-            <line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
-          New Chat
-          <span style={{ marginLeft: "auto", display: "flex", gap: 2 }}>
-            <span className="kbd" style={{ background: "rgba(0,0,0,0.12)", borderColor: "rgba(0,0,0,0.2)", color: "rgba(10,10,12,0.7)" }}>⌘</span>
-            <span className="kbd" style={{ background: "rgba(0,0,0,0.12)", borderColor: "rgba(0,0,0,0.2)", color: "rgba(10,10,12,0.7)" }}>K</span>
-          </span>
-        </button>
-      </div>
+        {/* New Chat */}
+        <div className="px-3 pb-2.5 mb-2.5 border-b border-line">
+          <button id="sidebar-new-chat" onClick={handleNewChat} className="btn btn-primary btn-block justify-start text-[13.5px] py-2.5 px-3">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            New Chat
+            <span className="ml-auto flex gap-0.5">
+              <span className="kbd" style={{ background: "rgba(0,0,0,0.12)", borderColor: "rgba(0,0,0,0.2)", color: "rgba(10,10,12,0.7)" }}>⌘</span>
+              <span className="kbd" style={{ background: "rgba(0,0,0,0.12)", borderColor: "rgba(0,0,0,0.2)", color: "rgba(10,10,12,0.7)" }}>K</span>
+            </span>
+          </button>
+        </div>
 
-      {/* Nav */}
-      <nav style={{ padding: "0 12px" }}>
-        {NAV_ITEMS.map((item) => {
-          const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
-          return (
-            <Link key={item.label} href={item.href} style={{ textDecoration: "none" }}>
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "8px 12px",
-                fontSize: 12.5,
-                fontWeight: active ? 500 : 400,
-                color: active ? "var(--cream)" : "var(--text-muted)",
-                background: active ? "rgba(237,232,220,0.05)" : "transparent",
-                borderLeft: active ? "1.5px solid var(--cream)" : "1.5px solid transparent",
-                transition: "all .15s",
-                cursor: "pointer",
-              }}>
+        {/* Nav */}
+        <nav className="px-3">
+          {NAV_ITEMS.map((item) => {
+            const active = pathname === item.href || pathname.startsWith(item.href + "/");
+            return (
+              <Link key={item.label} href={item.href} className={`nav-item ${active ? "is-active" : ""}`}>
                 {item.icon}
                 {item.label}
-                {active && <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--cream-mute)" }}>·</span>}
-              </div>
-            </Link>
-          );
-        })}
-        {SOON_ITEMS.map((item) => (
-          <div key={item.label} style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "8px 12px",
-            fontSize: 12.5,
-            color: "var(--text-dim)",
-            borderLeft: "1.5px solid transparent",
-            cursor: "default",
-          }}>
-            {item.icon}
-            {item.label}
-            <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: 8, color: "var(--text-dim)", letterSpacing: "0.1em" }}>SOON</span>
-          </div>
-        ))}
-      </nav>
-
-      {/* Recent sessions */}
-      <div style={{ padding: "20px 18px 8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span className="sect-num" style={{ fontSize: 9 }}>§ RECENT</span>
-      </div>
-
-      <div style={{ flex: 1, overflow: "auto", padding: "0 12px" }}>
-        {sessions.length === 0 ? (
-          <p style={{ padding: "4px 12px", fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>
-            No chats yet
-          </p>
-        ) : (
-          sessions.map((s) => {
-            const isActive = s.id === activeSessionId && pathname === "/chat";
-            return (
-              <div key={s.id}
-                onClick={deletingId ? undefined : () => handleSessionClick(s)}
-                onMouseEnter={() => setHoveredId(s.id)}
-                onMouseLeave={() => setHoveredId(null)}
-                style={{
-                  padding: "7px 12px",
-                  fontSize: 12,
-                  cursor: deletingId ? "default" : "pointer",
-                  background: isActive ? "rgba(237,232,220,0.05)" : "transparent",
-                  borderLeft: isActive ? "1.5px solid var(--cream)" : "1.5px solid transparent",
-                  color: isActive ? "var(--cream)" : "var(--text-muted)",
-                  fontWeight: isActive ? 500 : 400,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  transition: "all .15s",
-                  position: "relative",
-                }}
-              >
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-                  {s.title.slice(0, 28)}{s.title.length > 28 ? "…" : ""}
-                </span>
-                <span style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "var(--font-mono)", letterSpacing: "0.06em", flexShrink: 0 }}>
-                  {relativeTime(s.created_at)}
-                </span>
-                <span
-                  onClick={(e) => handleDeleteSession(e, s.id)}
-                  role="button"
-                  aria-label="Delete session"
-                  style={{
-                    position: "absolute",
-                    right: 6,
-                    opacity: hoveredId === s.id || deletingId === s.id ? 1 : 0,
-                    fontSize: 13,
-                    color: "rgba(237,232,220,0.5)",
-                    cursor: "pointer",
-                    padding: "2px 5px",
-                    transition: "opacity .15s",
-                    lineHeight: 1,
-                    userSelect: "none",
-                  }}
-                >
-                  {deletingId === s.id ? (
-                    <span style={{ fontSize: "10px", color: "var(--text-dim)" }}>…</span>
-                  ) : (
-                    <span>×</span>
-                  )}
-                </span>
-              </div>
+              </Link>
             );
-          })
-        )}
-      </div>
+          })}
+        </nav>
 
-      {/* User */}
-      <div style={{ padding: 12, borderTop: "1px solid var(--border)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px" }}>
-          <div style={{
-            width: 28,
-            height: 28,
-            border: "1px solid var(--cream-ghost)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "var(--cream)",
-            fontSize: 13,
-            fontFamily: "var(--font-head)",
-            fontStyle: "italic",
-            flexShrink: 0,
-          }}>
-            {userInitial}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12.5, color: "var(--cream)", fontFamily: "var(--font-head)", fontStyle: "italic", lineHeight: 1.1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {userName}
-            </div>
-            <div style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "var(--font-mono)", letterSpacing: "0.06em", textTransform: "uppercase", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {user?.emailAddresses?.[0]?.emailAddress ?? "Student"}
-            </div>
-          </div>
-          <UserButton showName={false} />
+        {/* Recent sessions */}
+        <div className="px-[18px] pt-5 pb-2">
+          <span className="label text-[10.5px]">§ Recent</span>
         </div>
-      </div>
-    </aside>
+
+        <div className="flex-1 overflow-auto px-3">
+          {!loaded ? (
+            <SkeletonRows rows={5} meta={false} className="px-3" />
+          ) : sessions.length === 0 ? (
+            <p className="text-meta px-3 py-1">No chats yet</p>
+          ) : (
+            sessions.map((s) => {
+              const isActive = s.id === activeSessionId && pathname === "/chat";
+              return (
+                <div
+                  key={s.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleSessionClick(s)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSessionClick(s); } }}
+                  className={`session-row nav-item text-[13.5px] py-[7px] cursor-pointer ${isActive ? "is-active" : ""}`}
+                >
+                  <span className="flex-1 truncate">{s.title}</span>
+                  <span className="shrink-0 text-[11px] text-dim">{relativeTime(s.created_at)}</span>
+                  <button
+                    type="button"
+                    className="row-delete"
+                    aria-label={`Delete chat “${s.title}”`}
+                    onClick={(e) => handleDelete(e, s)}
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* User */}
+        <div className="p-3 border-t border-line">
+          <div className="flex items-center gap-2.5 px-2 py-1.5">
+            <div className="avatar avatar-sm">{userInitial}</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[14px] text-cream font-medium leading-tight truncate">{userName}</div>
+              <div className="text-[11.5px] text-dim mt-0.5 truncate">
+                {user?.emailAddresses?.[0]?.emailAddress ?? "Student"}
+              </div>
+            </div>
+            <UserButton showName={false} />
+          </div>
+        </div>
+      </aside>
+
+      {pending && (
+        <UndoToast key={pending.session.id} pending={pending} onUndo={handleUndo} />
+      )}
+    </>
+  );
+}
+
+function UndoToast({ pending, onUndo }: { pending: PendingDelete; onUndo: () => void }) {
+  // Remaining time, so the bar is right even if this mounted mid-countdown
+  // (e.g. after switching pages).
+  const [remaining] = useState(() => Math.max(0, pending.expiresAt - Date.now()));
+  return (
+    <div className="toast" role="status" aria-live="polite">
+      <span className="truncate max-w-[220px]">
+        Deleted <span className="text-cream-dim">“{pending.session.title}”</span>
+      </span>
+      <button type="button" onClick={onUndo} className="btn btn-ghost btn-sm">Undo</button>
+      <span
+        className="toast-timer"
+        style={{ animationDuration: `${UNDO_MS}ms`, animationDelay: `-${UNDO_MS - remaining}ms` }}
+      />
+    </div>
   );
 }

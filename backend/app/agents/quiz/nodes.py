@@ -16,6 +16,15 @@ Return ONLY a valid JSON array with no markdown, no code blocks, no preamble. Fo
 ]
 "correct" must be the letter of the right option.
 
+The student's weak areas, from quizzes they got wrong and notes they found hard:
+{weak_areas}
+
+How to use the weak areas:
+- If the input names a topic, quiz that topic, and aim at least 2 questions at related weak areas (especially the concepts behind questions they missed) when there are any.
+- If the input asks to be quizzed on what they're weak at, or names no topic, build every question from the weak areas above.
+- If there are no weak areas and no topic, quiz them on their recent topics from the memory context.
+- Never repeat a missed question word for word; test the same idea a different way.
+
 {history}
 Input:
 {user_input}
@@ -28,6 +37,8 @@ STRICT_PREFIX = (
     "Return EXACTLY AND ONLY a raw JSON array. No markdown, no commentary.\n\n"
 )
 
+WEAK_AREAS_K = 5
+
 
 class QuizNodes:
     def __init__(self, memory_provider: MemoryProvider) -> None:
@@ -39,19 +50,24 @@ class QuizNodes:
         return clean_quiz(parse_json_array(message_text(response)))
 
     async def generate_quiz(self, state: AcademicState) -> AcademicState:
-        # Step 1 & 2: retrieve + inject memory context
+        # Step 1 & 2: retrieve + inject memory context, including weak areas
         past_chats = await self.memory_provider.aread_memory(
             state["user_id"], "past_chats", query=state["input"]
         )
         preferences = await self.memory_provider.aread_memory(
             state["user_id"], "preferences", query=state["input"]
         )
-        state["memory_context"] = past_chats + preferences
-        memory_text = "\n".join(state["memory_context"]) if state["memory_context"] else "No memory found."
+        weak_areas = await self.memory_provider.aread_memory(
+            state["user_id"], "weak_subjects", query=state["input"], k=WEAK_AREAS_K
+        )
+        state["memory_context"] = past_chats + preferences + weak_areas
+        memory_text = "\n".join(past_chats + preferences) or "No memory found."
+        weak_text = "\n".join(f"- {w}" for w in weak_areas) or "None recorded yet."
 
         prompt = QUIZ_PROMPT.format(
             user_input=state["input"],
             memory_context=memory_text,
+            weak_areas=weak_text,
             history=format_history(state.get("history")),
         )
 

@@ -48,9 +48,11 @@ class FakeChatModel(BaseChatModel):
 class FakeMemory:
     def __init__(self) -> None:
         self.writes: list[tuple[str, str, str]] = []
+        # Memories that reads return, keyed by memory type (seeded by tests).
+        self.seeded: dict[str, list[str]] = {}
 
     async def aread_memory(self, user_id, memory_type, query, k=None):
-        return []
+        return list(self.seeded.get(memory_type, []))[: k or 3]
 
     async def awrite_memory(self, user_id, memory_type, content):
         self.writes.append((user_id, memory_type, content))
@@ -102,7 +104,9 @@ class Harness:
 
         from app.core.dependencies import get_memory_provider
         import app.api.memory as memory_api
-        self.monkeypatch.setattr(memory_api, "get_memory_provider", lambda: self.memory)
+        import app.api.quiz as quiz_api
+        for api in (memory_api, quiz_api):
+            self.monkeypatch.setattr(api, "get_memory_provider", lambda: self.memory)
 
 
 @pytest.fixture

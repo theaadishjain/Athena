@@ -59,6 +59,21 @@ class SessionNote(Base):
     created_at = Column(DateTime, default=utcnow)
 
 
+class QuizResult(Base):
+    """One finished quiz attempt. Missed questions also become a
+    weak-area memory, which the Quiz agent reads next time."""
+    __tablename__ = "quiz_results"
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    user_id    = Column(String, nullable=False, index=True)
+    session_id = Column(String, nullable=True)
+    topic      = Column(String, nullable=False)
+    score      = Column(Integer, nullable=False)
+    total      = Column(Integer, nullable=False)
+    # JSON list of {"question", "correct_answer"} for the questions missed.
+    missed     = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+
 engine = create_async_engine(get_settings().database_url, echo=False)
 
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

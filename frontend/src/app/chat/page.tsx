@@ -8,13 +8,14 @@ import AgentBadge from "@/components/ui/AgentBadge";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
 import ErrorBanner from "@/components/ui/ErrorBanner";
 import FlashcardDeck from "@/components/chat/FlashcardDeck";
-import QuizDeck from "@/components/chat/QuizDeck";
+import QuizDeck, { type QuizOutcome } from "@/components/chat/QuizDeck";
 import type { ChatMessage, LoadingState } from "@/lib/types";
 import {
   sendChatMessageStream,
   createSession,
   getSessionMessages,
   saveNote,
+  saveQuizResult,
 } from "@/lib/api";
 import { setCurrentSession, resetCurrentSession } from "@/lib/session";
 import { renderWithLatex } from "@/lib/renderMarkdown";
@@ -24,7 +25,7 @@ export default function ChatPage() {
     <Suspense
       fallback={
         <DashboardLayout>
-          <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center" }}>
+          <div className="flex min-h-screen items-center justify-center">
             <LoadingSpinner size="lg" label="Loading chat…" />
           </div>
         </DashboardLayout>
@@ -35,6 +36,15 @@ export default function ChatPage() {
   );
 }
 
+const SLASH_COMMANDS = [
+  { cmd: "/plan", desc: "Generate a study plan for an upcoming exam" },
+  { cmd: "/summarize", desc: "Summarize a PDF, link, or pasted text" },
+  { cmd: "/flashcards", desc: "Create spaced-repetition cards from notes" },
+  { cmd: "/quiz", desc: "Quiz me on topics I'm weak at" },
+  { cmd: "/explain", desc: "Explain a concept step-by-step" },
+  { cmd: "/solve", desc: "Work through a problem together" },
+];
+
 function ChatPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -43,6 +53,7 @@ function ChatPageContent() {
   const [loadingState, setLoadingState] = useState<LoadingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [showSlash, setShowSlash] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -65,6 +76,7 @@ function ChatPageContent() {
         setLoadingState("idle");
         setError(null);
         setCurrentSessionId(null);
+        setHistoryLoading(false);
         resetCurrentSession();
       }
       return;
@@ -86,11 +98,14 @@ function ChatPageContent() {
         if (targetId) {
           setCurrentSession(targetId);
           setCurrentSessionId(targetId);
+          setHistoryLoading(true);
           try {
             const msgs = await getSessionMessages(targetId, token);
             if (!cancelled) setMessages(msgs);
           } catch {
             if (!cancelled) { resetCurrentSession(); setCurrentSessionId(null); }
+          } finally {
+            if (!cancelled) setHistoryLoading(false);
           }
         } else {
           if (!cancelled) setCurrentSessionId(null);
@@ -204,6 +219,12 @@ function ChatPageContent() {
     return saveNote(currentSessionId, title, message.content, token);
   }, [getToken, currentSessionId]);
 
+  const handleQuizComplete = useCallback(async (prompt: string, outcome: QuizOutcome): Promise<boolean> => {
+    const token = await getToken();
+    if (!token) return false;
+    return saveQuizResult({ topic: prompt.trim() || "General", ...outcome, session_id: currentSessionId }, token);
+  }, [getToken, currentSessionId]);
+
   const handleSendRef = useRef(handleSend);
   useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
 
@@ -211,51 +232,24 @@ function ChatPageContent() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   }, [handleSend]);
 
-  const slashCommands = [
-    { cmd: "/plan", desc: "Generate a study plan for an upcoming exam" },
-    { cmd: "/summarize", desc: "Summarize a PDF, link, or pasted text" },
-    { cmd: "/flashcards", desc: "Create spaced-repetition cards from notes" },
-    { cmd: "/quiz", desc: "Quiz me on topics I'm weak at" },
-    { cmd: "/explain", desc: "Explain a concept step-by-step" },
-    { cmd: "/solve", desc: "Work through a problem together" },
-  ];
+  const canSend = loadingState !== "loading" && !!input.trim();
 
   return (
     <DashboardLayout>
-      <div style={{ display: "flex", flexDirection: "column", height: "100vh", position: "relative" }}>
+      <div className="relative flex h-screen flex-col">
 
         {/* Chat Header */}
-        <header style={{
-          padding: "14px 28px",
-          borderBottom: "1px solid var(--border)",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          background: "rgba(10,10,12,0.7)",
-          backdropFilter: "blur(8px)",
-          position: "sticky", top: 0, zIndex: 30,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <span className="sect-num">§ SESSION</span>
-            <h2 style={{ fontSize: 17, fontFamily: "var(--font-head)", fontStyle: "italic", fontWeight: 400, color: "var(--cream)", letterSpacing: "0.005em", margin: 0 }}>
+        <header className="topbar">
+          <div className="flex items-center gap-3.5">
+            <span className="label">§ Session</span>
+            <h2 className="serif-i text-[19px]">
               {messages.length > 0 ? "Conversation" : "New chat"}
             </h2>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span className="sect-num">{messages.length} MESSAGES</span>
+          <div className="flex items-center gap-2">
+            <span className="label mr-1">{messages.length} messages</span>
             {messages.length > 0 && (
-              <button
-                id="export-chat-btn"
-                onClick={exportChatAsMarkdown}
-                style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  padding: "6px 12px", fontSize: 10,
-                  color: "var(--text-muted)", background: "transparent",
-                  border: "1px solid var(--border)", cursor: "pointer",
-                  fontFamily: "var(--font-mono)", letterSpacing: "0.06em", textTransform: "uppercase",
-                  transition: "all .15s",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--cream)"; e.currentTarget.style.borderColor = "var(--border-strong)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}
-              >
+              <button id="export-chat-btn" onClick={exportChatAsMarkdown} className="btn btn-subtle btn-sm">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                   <polyline points="7 10 12 15 17 10"/>
@@ -264,20 +258,7 @@ function ChatPageContent() {
                 Export
               </button>
             )}
-            <button
-              id="new-chat-btn"
-              onClick={handleNewChat}
-              style={{
-                display: "flex", alignItems: "center", gap: 6,
-                padding: "6px 12px", fontSize: 10,
-                color: "var(--text-muted)", background: "transparent",
-                border: "1px solid var(--border)", cursor: "pointer",
-                fontFamily: "var(--font-mono)", letterSpacing: "0.06em", textTransform: "uppercase",
-                transition: "all .15s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--cream)"; e.currentTarget.style.borderColor = "var(--border-strong)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}
-            >
+            <button id="new-chat-btn" onClick={handleNewChat} className="btn btn-subtle btn-sm">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19"/>
                 <line x1="5" y1="12" x2="19" y2="12"/>
@@ -288,15 +269,16 @@ function ChatPageContent() {
         </header>
 
         {/* Messages */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "28px 28px 120px" }}>
-          <div style={{ maxWidth: 820, margin: "0 auto", display: "flex", flexDirection: "column", gap: 24 }}>
+        <div className="flex-1 overflow-y-auto px-7 pt-7 pb-[120px]">
+          <div className="mx-auto flex max-w-[820px] flex-col gap-6">
 
-            {/* Date divider */}
+            {historyLoading && messages.length === 0 && <HistorySkeleton />}
+
             {messages.length > 0 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-                <span className="sect-num">TODAY</span>
-                <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+              <div className="flex items-center gap-3">
+                <div className="h-px flex-1 bg-line" />
+                <span className="label">Today</span>
+                <div className="h-px flex-1 bg-line" />
               </div>
             )}
 
@@ -309,6 +291,7 @@ function ChatPageContent() {
                   onExplainMore={() => handleSend("Explain that in more detail, with an example.")}
                   onQuizMe={() => handleSend(`Quiz me on: ${prompt.slice(0, 200)}`)}
                   onSave={() => handleSaveAnswer(msg, prompt)}
+                  onQuizComplete={(outcome) => handleQuizComplete(prompt, outcome)}
                 />
               );
             })}
@@ -319,78 +302,48 @@ function ChatPageContent() {
         </div>
 
         {/* Welcome state */}
-        {messages.length === 0 && loadingState !== "loading" && (
-          <div style={{
-            position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-            maxWidth: 560, width: "100%", padding: "0 28px",
-            textAlign: "center", pointerEvents: "none",
-          }}>
+        {messages.length === 0 && loadingState !== "loading" && !historyLoading && (
+          <div className="pointer-events-none absolute top-1/2 left-1/2 w-full max-w-[560px] -translate-x-1/2 -translate-y-1/2 px-7 text-center">
             <div className="glow-radial" style={{
               width: 600, height: 600, top: -200, left: "50%", transform: "translateX(-50%)",
               background: "radial-gradient(circle, rgba(237,232,220,0.04), transparent 70%)",
             }} />
-            <h1 style={{
-              fontSize: 64, lineHeight: 0.95,
-              fontFamily: "var(--font-head)", fontWeight: 400,
-              letterSpacing: "-0.02em", color: "var(--cream)",
-              marginBottom: 16,
-            }}>
+            <h1 className="h-lg mb-4 text-[60px] leading-[0.98]">
               What are<br />
-              <em style={{ fontFamily: "var(--font-head)", fontStyle: "italic" }}>we studying</em><br />
+              <em className="serif-i">we studying</em><br />
               today?
             </h1>
-            <p style={{ fontSize: 15, color: "var(--cream-dim)", lineHeight: 1.5, fontWeight: 300 }}>
-              Type a question, or use <span className="kbd" style={{ pointerEvents: "all" }}>/</span> for commands like <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>/plan</span>, <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>/summarize</span>, or <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>/flashcards</span>.
+            <p className="text-body">
+              Type a question, or use <span className="kbd pointer-events-auto">/</span> for commands like{" "}
+              <code className="font-mono text-[12.5px]">/plan</code>, <code className="font-mono text-[12.5px]">/summarize</code>, or{" "}
+              <code className="font-mono text-[12.5px]">/flashcards</code>.
             </p>
           </div>
         )}
 
         {/* Composer */}
-        <div style={{
-          position: "sticky", bottom: 0,
-          padding: "16px 28px 24px",
-          borderTop: "1px solid var(--border)",
-          background: "rgba(10,10,12,0.85)",
-          backdropFilter: "blur(8px)",
-          zIndex: 40,
-        }}>
-          <div style={{ maxWidth: 820, margin: "0 auto", position: "relative" }}>
+        <div className="composer">
+          <div className="relative mx-auto max-w-[820px]">
             {/* Slash commands popup */}
             {showSlash && (
-              <div style={{
-                position: "absolute", bottom: "calc(100% + 10px)", left: 0, right: 0,
-                background: "var(--surface-2)", border: "1px solid var(--border-strong)",
-                padding: 6, boxShadow: "0 16px 48px -8px rgba(0,0,0,0.7)", zIndex: 10,
-              }}>
-                <div style={{ padding: "8px 12px", display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--border)" }}>
-                  <span className="sect-num">§ COMMANDS</span>
-                  <span className="sect-num">↑↓ NAV · ↵ SELECT</span>
+              <div className="menu absolute right-0 bottom-[calc(100%+10px)] left-0 z-10">
+                <div className="flex justify-between border-b border-line px-3 py-2">
+                  <span className="label">§ Commands</span>
+                  <span className="label">↑↓ nav · ↵ select</span>
                 </div>
-                {slashCommands.map((s, i) => (
+                {SLASH_COMMANDS.map((s, i) => (
                   <div key={s.cmd}
                     onClick={() => { setInput(s.cmd + " "); setShowSlash(false); inputRef.current?.focus(); }}
-                    style={{
-                      padding: "9px 12px", display: "flex", alignItems: "center", gap: 12,
-                      cursor: "pointer",
-                      background: i === 0 ? "rgba(237,232,220,0.05)" : "transparent",
-                      borderLeft: i === 0 ? "1.5px solid var(--cream)" : "1.5px solid transparent",
-                      transition: "all .12s",
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(237,232,220,0.05)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = i === 0 ? "rgba(237,232,220,0.05)" : "transparent"; }}
+                    className={`menu-item ${i === 0 ? "is-active" : ""}`}
                   >
-                    <div>
-                      <div style={{ fontSize: 12, color: "var(--cream)", fontFamily: "var(--font-mono)", fontWeight: 500, letterSpacing: "0.02em" }}>{s.cmd}</div>
-                      <div style={{ fontSize: 10.5, color: "var(--text-muted)", fontFamily: "var(--font-head)", fontStyle: "italic", marginTop: 2 }}>{s.desc}</div>
-                    </div>
+                    <div className="font-mono text-[13px] font-medium text-cream">{s.cmd}</div>
+                    <div className="text-meta mt-0.5">{s.desc}</div>
                   </div>
                 ))}
               </div>
             )}
 
-            <div style={{
-              background: "rgba(237,232,220,0.02)", border: "1px solid var(--border-strong)", padding: 4,
-            }}>
+            <div className="composer-box">
               <textarea
                 ref={inputRef}
                 id="chat-input"
@@ -400,31 +353,20 @@ function ChatPageContent() {
                 placeholder="Ask Athena anything…"
                 rows={1}
                 disabled={loadingState === "loading"}
-                style={{
-                  width: "100%", background: "transparent", border: "none", outline: "none",
-                  padding: "14px 14px 6px", fontSize: 14, color: "var(--text)", resize: "none",
-                  minHeight: 48, fontFamily: "var(--font-head)", lineHeight: 1.5,
-                  fontStyle: input ? "normal" : "italic",
-                }}
+                className="composer-input"
               />
-              <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 6px 6px" }}>
-                <span className="sect-num" style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
-                  <span className="kbd">/</span> CMDS
-                  <span style={{ margin: "0 3px" }}>·</span>
-                  <span className="kbd">⇧</span><span className="kbd">↵</span> NL
+              <div className="flex items-center gap-1 px-1.5 pt-1 pb-1.5">
+                <span className="label ml-auto flex items-center gap-1">
+                  <span className="kbd">/</span> commands
+                  <span className="mx-1">·</span>
+                  <span className="kbd">⇧</span><span className="kbd">↵</span> new line
                 </span>
                 <button
                   id="chat-send"
                   onClick={() => handleSend()}
-                  disabled={loadingState === "loading" || !input.trim()}
-                  style={{
-                    width: 32, height: 32,
-                    background: input.trim() ? "var(--cream)" : "rgba(237,232,220,0.05)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    color: input.trim() ? "#0a0a0c" : "var(--text-dim)",
-                    transition: "all .15s", border: "none", cursor: "pointer",
-                    opacity: loadingState === "loading" ? 0.5 : 1,
-                  }}
+                  disabled={!canSend}
+                  aria-label="Send message"
+                  className={`send-btn ml-2 ${input.trim() ? "is-ready" : ""} ${loadingState === "loading" ? "opacity-50" : ""}`}
                 >
                   {loadingState === "loading" ? (
                     <LoadingSpinner size="sm" />
@@ -444,6 +386,30 @@ function ChatPageContent() {
   );
 }
 
+/** Placeholder bubbles while an existing chat's messages load. */
+function HistorySkeleton() {
+  return (
+    <div role="status" aria-label="Loading conversation" className="flex flex-col gap-6">
+      {[0, 1].map((i) => (
+        <div key={i} className="flex flex-col gap-6">
+          <div className="flex justify-end">
+            <span className="skeleton" style={{ width: i ? "34%" : "46%", height: 44 }} />
+          </div>
+          <div className="flex items-start gap-3.5">
+            <span className="skeleton shrink-0" style={{ width: 32, height: 32 }} />
+            <div className="flex flex-1 flex-col gap-2.5 pt-1">
+              <span className="skeleton" style={{ width: 120, height: 12 }} />
+              <span className="skeleton" style={{ width: "92%", height: 12 }} />
+              <span className="skeleton" style={{ width: "84%", height: 12 }} />
+              <span className="skeleton" style={{ width: "60%", height: 12 }} />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 interface ChatBubbleProps {
   message: ChatMessage;
   prompt: string;
@@ -451,11 +417,12 @@ interface ChatBubbleProps {
   onExplainMore: () => void;
   onQuizMe: () => void;
   onSave: () => Promise<boolean>;
+  onQuizComplete: (outcome: QuizOutcome) => Promise<boolean>;
 }
 
 type ActionLabel = "Copy" | "Explain more" | "Quiz me" | "Save";
 
-function ChatBubble({ message, prompt, busy, onExplainMore, onQuizMe, onSave }: ChatBubbleProps) {
+function ChatBubble({ message, prompt, busy, onExplainMore, onQuizMe, onSave, onQuizComplete }: ChatBubbleProps) {
   const isUser = message.role === "user";
   const isTyping = !isUser && !message.content;
   const [flash, setFlash] = useState<{ action: ActionLabel; text: string } | null>(null);
@@ -490,77 +457,51 @@ function ChatBubble({ message, prompt, busy, onExplainMore, onQuizMe, onSave }: 
 
   if (isUser) {
     return (
-      <div style={{ display: "flex", justifyContent: "flex-end" }} className="animate-fade-in">
-        <div style={{
-          maxWidth: "72%", padding: "12px 16px",
-          background: "var(--cream)", color: "#0a0a0c",
-          fontSize: 14, lineHeight: 1.5, letterSpacing: "-0.005em",
-        }}>
-          {message.content}
-        </div>
+      <div className="animate-fade-in flex justify-end">
+        <div className="bubble-user">{message.content}</div>
       </div>
     );
   }
 
   return (
-    <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }} className="animate-fade-in">
-      <div style={{
-        width: 32, height: 32, flexShrink: 0,
-        border: "1px solid var(--cream-ghost)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        color: "var(--cream)", fontSize: 17,
-        fontFamily: "var(--font-head)", fontStyle: "italic",
-        marginTop: 2,
-      }}>A</div>
-      <div style={{ flex: 1, minWidth: 0, maxWidth: "85%" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-          <span style={{ fontSize: 13, fontWeight: 400, color: "var(--cream)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>Athena</span>
+    <div className="animate-fade-in flex items-start gap-3.5">
+      <div className="avatar mt-0.5">A</div>
+      <div className="min-w-0 max-w-[85%] flex-1">
+        <div className="mb-2.5 flex items-center gap-2.5">
+          <span className="serif-i text-[15px]">Athena</span>
           {message.agent && <AgentBadge agent={message.agent} />}
           {isTyping && (
-            <span className="sect-num" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--cream)", animation: "athenaPulse 1.5s infinite" }} />
-              THINKING
+            <span className="label inline-flex items-center gap-1.5">
+              <span className="pulse-dot h-[5px] w-[5px]" />
+              Thinking
             </span>
           )}
         </div>
-        <div style={{ color: "var(--cream)", fontSize: 14, lineHeight: 1.65, letterSpacing: "-0.005em", fontFamily: "var(--font-head)" }}>
-          {isTyping ? (
-            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-              {[0,1,2].map(i => (
-                <span key={i} style={{ width: 4, height: 4, borderRadius: "50%", background: "rgba(237,232,220,0.5)", animation: `athenaPulse 1.2s infinite ${i * 0.15}s` }} />
-              ))}
-            </div>
-          ) : (
-            <div className="prose-chat" dangerouslySetInnerHTML={{ __html: renderWithLatex(message.content) }} />
-          )}
-        </div>
+        {isTyping ? (
+          <div className="flex items-center gap-1">
+            {[0, 1, 2].map(i => (
+              <span key={i} className="h-1 w-1 rounded-full" style={{ background: "rgba(237,232,220,0.5)", animation: `athenaPulse 1.2s infinite ${i * 0.15}s` }} />
+            ))}
+          </div>
+        ) : (
+          <div className="prose-chat" dangerouslySetInnerHTML={{ __html: renderWithLatex(message.content) }} />
+        )}
         {/* Action row */}
         {!isTyping && message.content && (
-          <div style={{ display: "flex", gap: 0, marginTop: 10 }}>
-            {actions.map((a, i) => {
-              const disabled = isDisabled(a);
-              return (
-                <button key={a} type="button" disabled={disabled} style={{
-                  fontSize: 10, color: "var(--text-muted)", padding: `4px ${i === 0 ? "10px 4px 0" : "10px"}`,
-                  border: "none", borderRight: i < actions.length - 1 ? "1px solid var(--border)" : "none",
-                  fontFamily: "var(--font-mono)", letterSpacing: "0.06em", textTransform: "uppercase",
-                  transition: "color .15s", background: "none",
-                  cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1,
-                }}
-                  onClick={() => runAction(a)}
-                  onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.color = "var(--cream)"; }}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}
-                >{flash?.action === a ? flash.text : a}</button>
-              );
-            })}
+          <div className="mt-2.5 flex">
+            {actions.map((a) => (
+              <button key={a} type="button" disabled={isDisabled(a)} className="action-link" onClick={() => runAction(a)}>
+                {flash?.action === a ? flash.text : a}
+              </button>
+            ))}
           </div>
         )}
         {message.flashcards && message.flashcards.length > 0 && (
           <FlashcardDeck flashcards={message.flashcards} />
         )}
         {message.quiz && message.quiz.length > 0 && (
-          <div style={{ marginTop: 12 }}>
-            <QuizDeck quiz={message.quiz} />
+          <div className="mt-3">
+            <QuizDeck quiz={message.quiz} onComplete={onQuizComplete} />
           </div>
         )}
       </div>
