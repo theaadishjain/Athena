@@ -3,10 +3,10 @@
 > *Your quiet study partner. One conversation. Five specialists.*
 
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js)](https://nextjs.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.162-green?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com)
 [![LangGraph](https://img.shields.io/badge/LangGraph-multi--agent-orange?style=flat-square)](https://langchain-ai.github.io/langgraph)
 [![Clerk](https://img.shields.io/badge/Clerk-auth-purple?style=flat-square)](https://clerk.com)
-[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![Gemini](https://img.shields.io/badge/Gemini-API-4285F4?style=flat-square&logo=google)](https://ai.google.dev)
 
 ---
 
@@ -44,54 +44,67 @@ upload a lecture PDF on Notes              →  Summarizer streams a cited summa
 
 - **5 Specialist Agents + a router** via LangGraph — Advisor, Planner, Summarizer, Flashcard and Quiz, with a rule-based Coordinator that routes each request
 - **Long-term Vector Memory** — ChromaDB, one collection per Clerk user: topics you asked about, preferences you state, and weak areas from quizzes and notes
-- **Real-time SSE Streaming** — tokens are streamed from the model as they are generated
+- **Real-time SSE Streaming** — chat replies and file summaries appear as the model writes them
 - **Interactive Flashcards** — 10 / 20 / 30 flip cards from any topic, or from a whole uploaded file (cards spread across every part, each citing its page); one click from a Notes summary too
 - **Spaced Repetition (SM-2)** — mark each card Got it / Missed it; missed cards come back within minutes and more often, and a "Due for review" deck appears on the Flashcards page and dashboard
 - **MCQ Quiz** — 5 questions with instant feedback and final score; scores are saved, missed questions become weak areas, and the next quiz targets them
-- **Document Intelligence** — PDF, TXT, MD upload → the whole document is read (long files are noted in parallel parts, then merged) into a structured summary with page / line citations and a revision checklist
+- **Document Intelligence** — PDF, TXT, MD upload → the whole document is read (long files are noted in parallel parts, then merged) into a streamed, structured summary with page / line citations and a revision checklist; invented page numbers are removed
 - **Study Plan Generator** — day-by-day exam preparation from a topic, a past chat or an uploaded syllabus, giving extra time to your weak areas
 - **Conversation context** — the last few messages of a chat are sent with each request, so follow-ups like "explain more" work
 - **Cross-device Session History** — all chats (including flashcards and quizzes), notes, and plans sync via Clerk auth
 - **Dashboard** — memory profile, real agent usage (last 30 days), day streak, recent quiz scores and cards due
 - **Export** — download chat as Markdown, summaries as PDF or Markdown
 - **Markdown + KaTeX + Syntax Highlighting** — full academic content rendering
-- **JWT Security** — every route protected, user identity from token only
+- **JWT Security** — every API route except `/health` needs a Clerk token, the user identity comes only from the token, and signed-out visitors are redirected to sign-in
+- **Free-tier friendly** — a backup model takes over when the main one is overloaded or out of quota, and students see a clear message instead of a generic error
 
 ---
 
 ## System Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  FRONTEND  │  Chat │ Notes │ Flashcards │ Study Plan │ Dashboard │ Clerk Auth  │
-└──────────────────────────┬──────────────────────────────────┘
-                           │  SSE / REST + Bearer JWT
-┌──────────────────────────▼──────────────────────────────────┐
-│  API       │  FastAPI  /chat /plan /summarize /sessions /memory  │
-└──────────────────────────┬──────────────────────────────────┘
-                           │  AcademicState
-┌──────────────────────────▼──────────────────────────────────┐
-│  AGENTS    │              LangGraph                          │
-│            │         Coordinator Router                      │
-│            │    ↙      ↙      ↓      ↘      ↘              │
-│            │ Advisor Planner Summarizer Flashcard Quiz       │
-│            │              Agent Executor                     │
-│            │     Gemini API (gemini-3.8-flash) or OpenRouter │
-└──────────────────────────┬──────────────────────────────────┘
-            read ↕ write   │  session save
-┌──────────────────────────▼──────────────────────────────────┐
-│  PERSIST   │  ChromaDB (memory)   │  SQLite (aiosqlite)     │
-│            │  past_chats          │  sessions               │
-│            │  preferences         │  messages               │
-│            │  weak_subjects       │  session_notes          │
-│            │  note_summaries      │  (cross-device)         │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph FE["Frontend — Next.js 16"]
+        UI["Chat · Notes · Flashcards<br/>Study Plan · Dashboard"]
+        SIGNIN["Clerk sign-in"]
+    end
+
+    subgraph BE["Backend — FastAPI"]
+        AUTH["Clerk JWT check"]
+        API["REST + SSE routes<br/>/chat · /summarize · /plan<br/>/flashcards · /quiz · /reviews<br/>/stats · /sessions · /memory"]
+    end
+
+    subgraph AGENTS["Agents — LangGraph"]
+        COORD{{"Coordinator<br/>rule-based router"}}
+        ADV["Advisor"]
+        PLAN["Planner"]
+        SUM["Summarizer"]
+        FC["Flashcard"]
+        QZ["Quiz"]
+        RUN["Each specialist:<br/>1. read memory<br/>2. call Gemini<br/>3. stream the reply<br/>4. write memory"]
+    end
+
+    LLM[("Gemini API<br/>3.8-flash: chat · quiz · plans<br/>3.5-flash-lite: files · backup")]
+    MEM[("ChromaDB memory<br/>past_chats<br/>preferences<br/>weak_subjects<br/>note_summaries")]
+    DB[("SQLite<br/>sessions · messages<br/>session_notes<br/>quiz_results<br/>review_cards")]
+
+    SIGNIN -.->|"session token"| UI
+    UI -->|"Bearer JWT"| AUTH
+    AUTH --> API
+    API --> COORD
+    COORD --> ADV & PLAN & SUM & FC & QZ
+    ADV & PLAN & SUM & FC & QZ --> RUN
+    RUN -->|"prompt"| LLM
+    RUN <-->|"read · write"| MEM
+    API <-->|"saved data"| DB
 ```
 
-**Memory flow (all agents, every request):**
-```
-read top-k → inject into AcademicState → agent generates → write to ChromaDB
-```
+How a chat message flows:
+
+1. The browser sends the message with the student's Clerk token; FastAPI verifies it and loads the last few messages of the chat.
+2. The Coordinator picks one specialist from the message (slash commands win, otherwise keywords at the start).
+3. The specialist reads the most relevant memories from ChromaDB, calls Gemini, and streams the reply back over SSE.
+4. The reply is saved to SQLite, and the specialist writes a short memory (a topic, a stated preference, or a weak area).
 
 ---
 
@@ -102,7 +115,7 @@ read top-k → inject into AcademicState → agent generates → write to Chroma
 | Frontend | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4 |
 | Auth | Clerk (RS256 JWT verified with PyJWT, permanent userId, cross-device) |
 | Backend | Python 3.11, FastAPI, LangGraph |
-| LLM | Google Gemini API (`gemini-3.8-flash`, free tier works) via its OpenAI-compatible endpoint; OpenRouter also supported |
+| LLM | Google Gemini API via its OpenAI-compatible endpoint: `gemini-3.8-flash` for chat, quizzes and plans, `gemini-3.5-flash-lite` for whole-file summaries / flashcards and as the backup model (free tier works); OpenRouter also supported |
 | Memory | ChromaDB vector memory (one collection per user) |
 | Database | SQLite via SQLAlchemy async (aiosqlite) |
 | Rendering | marked.js + KaTeX + highlight.js, sanitized with DOMPurify |
@@ -128,7 +141,7 @@ Athena/
 │   │   ├── core/               # Config, auth, database, dependencies
 │   │   ├── memory/             # ChromaDB store + async memory provider
 │   │   ├── schemas/            # Request/response DTOs
-│   │   └── services/           # LLM service, ingest
+│   │   └── services/           # LLM service, document ingest, SM-2 scheduler
 │   ├── tests/              # pytest suite (fake LLM, no API key needed)
 │   ├── Dockerfile
 │   ├── requirements.txt    # pinned runtime deps
@@ -140,9 +153,10 @@ Athena/
 │   │   │   ├── page.tsx        # Landing
 │   │   │   ├── chat/           # Chat with streaming
 │   │   │   ├── notes/          # Upload + summarize
-│   │   │   ├── flashcards/     # Flashcard generator
+│   │   │   ├── flashcards/     # Flashcard generator + review session
 │   │   │   ├── studyplan/      # Study plan generator
-│   │   │   └── dashboard/      # Memory profile + overview
+│   │   │   ├── dashboard/      # Memory profile + real stats
+│   │   │   └── sign-in/, sign-up/  # Clerk pages
 │   │   ├── components/
 │   │   │   ├── chat/           # FlashcardDeck, QuizDeck
 │   │   │   └── ui/             # Sidebar, AgentBadge, etc.
@@ -150,7 +164,9 @@ Athena/
 │   │       ├── api.ts          # All backend calls
 │   │       ├── types.ts        # TypeScript interfaces
 │   │       ├── session.ts      # Clerk session management
-│   │       └── renderMarkdown.ts # marked + KaTeX + highlight.js
+│   │       ├── renderMarkdown.ts # marked + KaTeX + highlight.js + citation tags
+│   │       └── format.ts       # small formatting helpers
+│   │   └── proxy.ts            # Clerk route protection (Next.js 16 middleware)
 │   ├── Dockerfile
 │   └── .env.local.example
 └── docker-compose.yml
@@ -273,7 +289,8 @@ APP_URL=http://localhost:3000
 # Optional
 CLERK_ISSUER=https://your-app.clerk.accounts.dev   # enforce token issuer
 CLERK_AUTHORIZED_PARTIES=                          # allowed `azp`; defaults to CORS_ORIGINS
-MAX_UPLOAD_MB=10                                   # /summarize upload limit
+MAX_UPLOAD_MB=10                                   # limit for every file upload
+LLM_REASONING_EFFORT=                              # low / medium / high; empty = low on Gemini
 CHAT_HISTORY_MESSAGES=10                           # earlier messages sent to the model
 ```
 
@@ -297,6 +314,12 @@ NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard
 | `OPENROUTER_API_KEY` (optional alternative) | [openrouter.ai/keys](https://openrouter.ai/keys) |
 | `CLERK_SECRET_KEY` + `CLERK_PUBLISHABLE_KEY` | [clerk.com/dashboard](https://clerk.com/dashboard) — free account |
 
+### Using the Gemini free tier
+
+- Free-tier quotas are per model and per day. When `LLM_MODEL` is overloaded (503) or out of quota (429), requests switch straight to `LLM_FALLBACK_MODEL`, which has its own quota.
+- Long PDFs are split into parts; `LLM_MAX_CONCURRENCY` caps how many are sent at once so the per-minute limit isn't hit.
+- Google may use free-tier requests (including uploaded notes) to improve its products. Use a paid key before real users upload their material.
+
 ---
 
 ## Agent System
@@ -306,8 +329,8 @@ Chat messages go through a single `/chat` endpoint, where the Coordinator (a rul
 | Agent | Trigger keywords | Output |
 |---|---|---|
 | **Advisor** | explain, what/why/how questions, `/explain`, `/solve` (default) | Streaming text (brief/detailed auto-mode) |
-| **Planner** | plan, schedule, timetable, deadline, exam + a time frame ("in 3 days", "next week"), `/plan` | Day-by-day study schedule |
-| **Summarizer** | /notes page + file upload | Structured summary with `[p. N]` citations + checklist |
+| **Planner** | plan, schedule, timetable, deadline, exam + a time frame ("in 3 days", "next week"), `/plan`; Study Plan page (optional syllabus file) | Day-by-day schedule that prioritises your weak areas |
+| **Summarizer** | summarize, summary, tl;dr, `/summarize` (pasted text in chat); Notes page for files | Structured summary + checklist; files get `[p. N]` / `[L12–40]` citations |
 | **Flashcard** | flashcard(s), make cards, memorize, `/flashcards`; Flashcards page / Notes with a file | 10/20/30 Q&A flip cards (with `p. N` sources from files) |
 | **Quiz** | quiz, quiz me, test me, mcq, practice questions, `/quiz` | 5 MCQ with scoring, aimed at your weak areas |
 
@@ -332,7 +355,9 @@ GET  /health                        → { status: "ok" }
 POST /chat                          → SSE stream: `token` events, then one `done` event
                                       (saves both messages; `persist: false` for one-off calls)
 POST /plan                          → UnifiedResponse JSON
-POST /summarize                     → multipart/form-data
+POST /plan/syllabus                 → multipart/form-data (file, input) → study plan following an uploaded syllabus
+POST /summarize                     → multipart/form-data (file, session_id) → UnifiedResponse with a cited summary
+POST /summarize/stream              → same, as SSE: `token` events, then a `done` event with the citation-checked text
 POST /flashcards/document           → multipart/form-data (file, count) → UnifiedResponse with flashcards from the whole file
 POST /extract                       → multipart/form-data → { filename, text } (plain-text preview, first 8,000 chars)
 POST /quiz/results                  → save a finished quiz { topic, score, total, missed[] }; misses → weak area
@@ -340,12 +365,15 @@ GET  /quiz/results                  → recent quiz attempts
 POST /reviews/grade                 → grade a card Got it / Missed it (first grade adds it to the SM-2 schedule)
 GET  /reviews/due                   → cards due now, most overdue / most missed first
 GET  /stats                         → agent usage, day streak, recent quiz scores, cards due
-POST /plan/syllabus                 → multipart/form-data (file, input) → study plan following an uploaded syllabus
 GET  /memory/profile                → { preferences, weak_subjects, recent_topics }
+GET  /memory                        → read memories of one type (query, k)
+POST /memory                        → write a memory
 GET  /sessions                      → list user sessions
 POST /sessions                      → create session
 GET  /sessions/{id}/messages        → load chat history
 POST /sessions/{id}/messages        → save message
+GET  /sessions/{id}/notes           → notes saved in one session
+POST /sessions/{id}/notes           → save a note (summary, plan or chat answer)
 GET  /sessions/notes/all            → past summaries + study plans
 DELETE /sessions/{id}               → delete session and its messages (notes are kept)
 DELETE /sessions/empty              → cleanup empty sessions
@@ -360,7 +388,7 @@ DELETE /sessions/empty              → cleanup empty sessions
   response: string
   memory_updated: boolean
   fallback: boolean
-  flashcards?: { question: string; answer: string }[]
+  flashcards?: { question: string; answer: string; source?: string | null }[]  // source e.g. "p. 12"
   quiz?: { question: string; options: string[]; correct: string; explanation: string }[]
 }
 ```
@@ -400,6 +428,7 @@ DELETE /sessions/empty              → cleanup empty sessions
 - [ ] RAG over PDFs — query specific textbook sections
 - [ ] Voice transcription (Whisper) — lecture recording → notes
 - [ ] Export to Notion
+- [ ] Phone layout (the web app is desktop-first today)
 - [ ] Mobile app (React Native)
 - [ ] Charts of quiz scores and review accuracy over time
 - [ ] Onboarding flow — personalize from day one

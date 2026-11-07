@@ -109,7 +109,7 @@
   }
   .serif-i { font-style: italic; }
 
-  .h-hero { font-size: clamp(60px, 8.5vw, 112px); line-height: 0.95; letter-spacing: -0.025em; }
+  .h-hero { font-size: clamp(52px, 6.4vw, 96px); line-height: 0.95; letter-spacing: -0.025em; }
   .h-xl   { font-size: 68px; line-height: 1;    letter-spacing: -0.02em; }
   .h-lg   { font-size: 52px; line-height: 1.04; letter-spacing: -0.02em; }
   .h-md   { font-size: 42px; line-height: 1.06; letter-spacing: -0.015em; }
@@ -286,17 +286,6 @@
     border-left-color: var(--cream);
   }
 
-  .nav-link {
-    padding: 8px 14px;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-muted);
-    background: none;
-    border: none;
-    cursor: pointer;
-    transition: color .15s;
-  }
-  .nav-link:hover { color: var(--cream); }
 
   .session-row { position: relative; }
   .session-row .row-delete {
@@ -661,8 +650,9 @@
 
   .feature-row {
     display: grid;
-    grid-template-columns: 80px 1fr 360px;
-    gap: 32px;
+    /* Title and description share the width instead of leaving a gap. */
+    grid-template-columns: 72px minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 40px;
     padding: 36px 0;
     border-bottom: 1px solid rgba(237, 232, 220, 0.1);
     align-items: start;

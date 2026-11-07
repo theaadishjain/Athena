@@ -95,26 +95,22 @@ function OrbitBackdrop() {
             <g transform="translate(940, 420)">
               <circle r="5" />
               <circle r="14" fill="none" stroke="#ede8dc" strokeOpacity="0.25" />
-              <text x="22" y="4" opacity="0.7">ADVISOR</text>
             </g>
           </g>
           <g style={{ transformOrigin: "640px 420px", animation: "athenaSpin 110s linear infinite reverse" }}>
             <g transform="translate(340, 420)">
               <circle r="4" opacity="0.85" />
               <rect x="-3" y="-3" width="6" height="6" fill="none" stroke="#ede8dc" strokeOpacity="0.4" />
-              <text x="-62" y="4" opacity="0.6">PLANNER</text>
             </g>
           </g>
           <g style={{ transformOrigin: "640px 420px", animation: "athenaSpin 160s linear infinite" }}>
             <g transform="translate(840, 640)">
               <circle r="3" opacity="0.8" />
-              <text x="12" y="4" opacity="0.55">SUMMARIZER</text>
             </g>
           </g>
           <g style={{ transformOrigin: "640px 420px", animation: "athenaSpin 200s linear infinite reverse" }}>
             <g transform="translate(260, 580)">
               <path d="M0,-4 L4,0 L0,4 L-4,0 Z" opacity="0.75" />
-              <text x="12" y="4" opacity="0.5">COORDINATOR</text>
             </g>
           </g>
         </g>
@@ -142,16 +138,8 @@ export default function LandingPage() {
         className="fixed top-0 right-0 left-0 z-20 border-b border-line"
         style={{ background: "rgba(10,10,12,0.8)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}
       >
-        <div className="flex items-center justify-between px-12 py-[18px]">
-          <div className="flex items-center gap-9">
-            <Logo />
-            <span className="label border-l border-line-strong pl-9">MMXXVI — Ed. 04</span>
-          </div>
-          <nav className="flex items-center gap-0.5">
-            {[["Product", "#product"], ["Agents", "#agents"], ["Examples", "#examples"]].map(([item, href]) => (
-              <a key={item} href={href} className="nav-link no-underline">{item}</a>
-            ))}
-          </nav>
+        <div className="mx-auto w-full max-w-[1416px] flex items-center justify-between px-12 py-[18px]">
+          <Logo />
           {isSignedIn ? (
             <button className="btn btn-primary btn-sm px-[18px] py-2.5" onClick={() => router.push("/dashboard")}>
               Dashboard →
@@ -168,16 +156,16 @@ export default function LandingPage() {
       </header>
 
       {/* Hero */}
-      <section id="product" className="relative scroll-mt-20 overflow-hidden px-12 pt-[130px]">
+      <section id="product" className="mx-auto w-full max-w-[1416px] relative scroll-mt-20 overflow-hidden px-12 pt-[112px]">
         <OrbitBackdrop />
         <div className="relative z-[2]">
-          <div className="running-head mb-12 pb-3.5">
+          <div className="running-head mb-10 pb-3.5">
             <span className="label">§ 01 — Overture</span>
             <span className="label">For the student who intends to learn</span>
             <span className="label">P. 01 / 04</span>
           </div>
 
-          <div className="grid grid-cols-2 items-start gap-20">
+          <div className="grid grid-cols-[1.05fr_1fr] items-center gap-16">
             <div className="fade-up">
               <h1 className="h-hero">
                 Your<br />
@@ -230,7 +218,7 @@ export default function LandingPage() {
           </div>
 
           {/* Hero mockup */}
-          <div className="fade-up relative mt-[90px]" style={{ animationDelay: "0.3s" }}>
+          <div className="fade-up relative mx-auto mt-[72px] max-w-[1180px]" style={{ animationDelay: "0.3s" }}>
             <div className="mb-5 flex items-baseline justify-between border-t border-line pt-4">
               <span className="label">Fig. 01 — The interface</span>
               <span className="label">↓ Watch Athena think</span>
@@ -241,7 +229,7 @@ export default function LandingPage() {
       </section>
 
       {/* Features */}
-      <section id="agents" className="relative z-[2] scroll-mt-20 px-12 pt-[100px] pb-[60px]">
+      <section id="agents" className="mx-auto w-full max-w-[1416px] relative z-[2] scroll-mt-20 px-12 pt-[100px] pb-[60px]">
         <div className="mb-10 flex items-baseline justify-between">
           <span className="label">§ 03 — The five agents</span>
           <span className="label">Entries 01 — 05</span>
@@ -266,7 +254,7 @@ export default function LandingPage() {
       </section>
 
       {/* Example prompts */}
-      <section id="examples" className="relative z-[2] scroll-mt-20 px-12 pt-20 pb-10">
+      <section id="examples" className="mx-auto w-full max-w-[1416px] relative z-[2] scroll-mt-20 px-12 pt-20 pb-10">
         <div className="mb-10 flex items-baseline justify-between">
           <span className="label">§ 04 — Try saying</span>
           <span className="label">Routed automatically</span>
@@ -302,7 +290,7 @@ export default function LandingPage() {
       </section>
 
       {/* CTA */}
-      <section className="relative z-[2] px-12 pt-[60px] pb-20">
+      <section className="mx-auto w-full max-w-[1416px] relative z-[2] px-12 pt-[60px] pb-20">
         <div className="relative overflow-hidden border px-12 py-16" style={{ borderColor: "rgba(237,232,220,0.15)" }}>
           <CornerTicks size={10} />
           <div className="glow-radial" style={{
@@ -340,7 +328,7 @@ function HeroMockup({ onCta }: { onCta: () => void }) {
         <span className="label ml-auto">Live</span>
         <span className="pulse-dot h-1.5 w-1.5" style={{ animationDuration: "2s" }} />
       </div>
-      <div className="flex h-[520px]">
+      <div className="flex h-[480px]">
         <div className="w-[210px] border-r border-line px-3 py-4">
           <div className="px-2 pt-1 pb-4"><span className="serif-i text-[15px]">Athena</span></div>
           <div className="label px-2.5 pt-2.5 pb-1.5 text-[10px]">Recent</div>

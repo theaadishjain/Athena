@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { ClerkProvider } from "@clerk/nextjs";
 import { dark } from "@clerk/themes";
 import "./globals.css";
@@ -11,6 +12,41 @@ export const metadata: Metadata = {
     "Your quiet AI study partner. Chat, summarize lectures with page citations, plan around your weak spots, and review flashcards on a spaced-repetition schedule — five specialist agents.",
   keywords: ["study", "AI", "academic", "assistant", "notes", "planner"],
 };
+
+// Some browser extensions (e.g. Bitdefender's adds `bis_skin_checked` to every
+// div) edit the page before React hydrates, and React's dev build reports the
+// difference as a hydration error. Development only: strip those attributes
+// until the page has settled, then stop watching so we never fight the
+// extension. Production React doesn't report these mismatches.
+const EXTENSION_ATTRIBUTES = ["bis_skin_checked", "bis_register", "__processed_"];
+const STRIP_EXTENSION_ATTRIBUTES = `(function () {
+  var attrs = ${JSON.stringify(EXTENSION_ATTRIBUTES)};
+  function strip(el) {
+    if (!el || el.nodeType !== 1) return;
+    for (var i = 0; i < attrs.length; i++) {
+      if (el.hasAttribute(attrs[i])) el.removeAttribute(attrs[i]);
+    }
+  }
+  function stripTree(root) {
+    strip(root);
+    if (root.querySelectorAll) {
+      var found = root.querySelectorAll(attrs.map(function (a) { return "[" + a + "]"; }).join(","));
+      for (var i = 0; i < found.length; i++) strip(found[i]);
+    }
+  }
+  var observer = new MutationObserver(function (mutations) {
+    for (var i = 0; i < mutations.length; i++) {
+      var m = mutations[i];
+      if (m.type === "attributes") strip(m.target);
+      else for (var j = 0; j < m.addedNodes.length; j++) stripTree(m.addedNodes[j]);
+    }
+  });
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: attrs, childList: true, subtree: true });
+  stripTree(document.documentElement);
+  window.addEventListener("load", function () {
+    setTimeout(function () { stripTree(document.documentElement); observer.disconnect(); }, 3000);
+  });
+})();`;
 
 export default function RootLayout({
   children,
@@ -43,7 +79,7 @@ export default function RootLayout({
       signInUrl="/sign-in"
       signUpUrl="/sign-up"
     >
-      <html lang="en" className="h-full">
+      <html lang="en" className="h-full" data-scroll-behavior="smooth">
         <head>
           <link rel="preconnect" href="https://fonts.googleapis.com" />
           <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -51,6 +87,12 @@ export default function RootLayout({
             href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..600,0..100;1,9..144,300..600,0..100&family=Figtree:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500&display=swap"
             rel="stylesheet"
           />
+          {process.env.NODE_ENV === "development" && (
+            // beforeInteractive: runs before React hydrates the page.
+            <Script id="strip-extension-attributes" strategy="beforeInteractive">
+              {STRIP_EXTENSION_ATTRIBUTES}
+            </Script>
+          )}
         </head>
         <body
           className="noise-overlay min-h-full flex flex-col antialiased"
