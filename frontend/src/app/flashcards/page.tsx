@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import DashboardLayout from "@/components/ui/DashboardLayout";
 import AgentBadge from "@/components/ui/AgentBadge";
 import CornerTicks from "@/components/ui/CornerTicks";
 import FlashcardDeck from "@/components/chat/FlashcardDeck";
-import type { Flashcard, LoadingState } from "@/lib/types";
+import type { Flashcard, LoadingState, ReviewGrade } from "@/lib/types";
 import { useAuth } from "@clerk/nextjs";
-import { sendChatMessageStream, flashcardsFromFile } from "@/lib/api";
+import { sendChatMessageStream, flashcardsFromFile, gradeCard, getDueCards, type DueCards } from "@/lib/api";
 import { getOrCreateSessionId } from "@/lib/session";
 
 const ACCEPTED_TYPES = ["application/pdf", "text/plain", "text/markdown"];
@@ -40,6 +40,48 @@ export default function FlashcardsPage() {
   const [error, setError] = useState<string | null>(null);
   const [flashcards, setFlashcards] = useState<Flashcard[] | null>(null);
   const [memoryUpdated, setMemoryUpdated] = useState(false);
+  // Name of the deck being studied (file name or topic), for the review schedule.
+  const [deckName, setDeckName] = useState("");
+
+  // Spaced repetition: cards due today, and the review session in progress.
+  const [due, setDue] = useState<DueCards | null>(null);
+  const [reviewCards, setReviewCards] = useState<Flashcard[] | null>(null);
+  const [reviewRound, setReviewRound] = useState(0);
+  const autoStartRef = useRef(false);
+
+  const loadDue = useCallback(async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const data = await getDueCards(token);
+      setDue(data);
+      // /flashcards?review=1 (from the dashboard) jumps straight into review.
+      if (!autoStartRef.current && typeof window !== "undefined"
+          && new URLSearchParams(window.location.search).get("review") && data.cards.length) {
+        autoStartRef.current = true;
+        setReviewCards(data.cards);
+        setReviewRound((r) => r + 1);
+      }
+    } catch { /* the review panel just stays hidden */ }
+  }, [getToken]);
+
+  useEffect(() => { loadDue(); }, [loadDue]);
+
+  const startReview = () => {
+    if (!due?.cards.length) return;
+    setReviewCards(due.cards);
+    setReviewRound((r) => r + 1);
+  };
+
+  const finishReview = () => {
+    setReviewCards(null);
+    loadDue();
+  };
+
+  const gradeAndSave = useCallback(async (card: Flashcard, grade: ReviewGrade, deck: string) => {
+    const token = await getToken();
+    return token ? gradeCard(card, grade, deck, token) : false;
+  }, [getToken]);
 
   // ── File handlers ─────────────────────────────────────
   const handleFile = useCallback((selected: File) => {
@@ -83,6 +125,7 @@ export default function FlashcardsPage() {
     setError(null);
     setFlashcards(null);
     setMemoryUpdated(false);
+    setDeckName(mode === "file" && file ? file.name : topic.trim());
 
     try {
       const token = await getToken();
@@ -163,6 +206,39 @@ export default function FlashcardsPage() {
             </h1>
             <p className="text-body">Generate flashcards from your notes or any topic.</p>
           </div>
+
+          {/* Due for review (spaced repetition) */}
+          {due && due.total > 0 && (
+            <div className="panel mb-6">
+              <div className="panel-head justify-between px-5">
+                <span className="label">§ Due for review</span>
+                <span className="text-meta">{due.total} cards on your schedule</span>
+              </div>
+              {reviewCards ? (
+                <div className="flex flex-col items-center gap-3 px-6 py-5">
+                  <FlashcardDeck
+                    key={reviewRound}
+                    flashcards={reviewCards}
+                    onGrade={(card, grade) => gradeAndSave(card, grade, card.deck ?? "Flashcards")}
+                    requeueMissed
+                  />
+                  <button onClick={finishReview} className="btn btn-tertiary btn-sm">Done reviewing</button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-4 px-5 py-4">
+                  <span className="serif-i text-[30px] leading-none">{due.due_count}</span>
+                  <span className="text-note flex-1">
+                    {due.due_count > 0
+                      ? `card${due.due_count === 1 ? "" : "s"} due now. Cards you missed come back first.`
+                      : "Nothing due right now. Cards come back on their SM-2 schedule."}
+                  </span>
+                  {due.due_count > 0 && (
+                    <button onClick={startReview} className="btn btn-primary btn-sm">Review now →</button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Main card */}
           <div className="panel panel-tinted mb-8">
@@ -307,7 +383,15 @@ export default function FlashcardsPage() {
                 </div>
               </div>
               <div className="flex min-h-[500px] flex-col items-center justify-center p-6">
-                <FlashcardDeck flashcards={flashcards} />
+                <FlashcardDeck
+                  key={deckName + flashcards.length}
+                  flashcards={flashcards}
+                  onGrade={async (card, grade) => {
+                    const ok = await gradeAndSave(card, grade, deckName);
+                    loadDue();
+                    return ok;
+                  }}
+                />
               </div>
             </div>
           )}

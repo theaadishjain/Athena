@@ -8,7 +8,7 @@ import "highlight.js/styles/github-dark.css";
 export const metadata: Metadata = {
   title: "Athena — AI Study Partner",
   description:
-    "Your quiet AI study partner. Chat, summarize lectures, plan your week, and generate flashcards with four specialized agents.",
+    "Your quiet AI study partner. Chat, summarize lectures with page citations, plan around your weak spots, and review flashcards on a spaced-repetition schedule — five specialist agents.",
   keywords: ["study", "AI", "academic", "assistant", "notes", "planner"],
 };
 

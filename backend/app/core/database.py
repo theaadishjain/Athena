@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Integer, String, Text, text
+from sqlalchemy import Column, DateTime, Float, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -72,6 +72,25 @@ class QuizResult(Base):
     # JSON list of {"question", "correct_answer"} for the questions missed.
     missed     = Column(Text, nullable=True)
     created_at = Column(DateTime, default=utcnow)
+
+
+class ReviewCard(Base):
+    """A flashcard on the student's spaced-repetition schedule (SM-2)."""
+    __tablename__ = "review_cards"
+    __table_args__ = (UniqueConstraint("user_id", "question", name="uq_review_card_question"),)
+    id               = Column(Integer, primary_key=True, autoincrement=True)
+    user_id          = Column(String, nullable=False, index=True)
+    deck             = Column(String, nullable=False, default="Flashcards")
+    question         = Column(Text, nullable=False)
+    answer           = Column(Text, nullable=False)
+    source           = Column(String, nullable=True)
+    ease             = Column(Float, nullable=False, default=2.5)
+    interval_days    = Column(Integer, nullable=False, default=0)
+    repetitions      = Column(Integer, nullable=False, default=0)
+    lapses           = Column(Integer, nullable=False, default=0)
+    due_at           = Column(DateTime, nullable=False, default=utcnow, index=True)
+    last_reviewed_at = Column(DateTime, nullable=True)
+    created_at       = Column(DateTime, default=utcnow)
 
 
 engine = create_async_engine(get_settings().database_url, echo=False)

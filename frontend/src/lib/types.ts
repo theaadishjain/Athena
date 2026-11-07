@@ -5,7 +5,12 @@ export interface Flashcard {
   answer: string;
   /** Where the answer comes from, e.g. "p. 12", for cards made from a file. */
   source?: string | null;
+  /** Set for cards already on the review schedule. */
+  id?: number;
+  deck?: string;
 }
+
+export type ReviewGrade = "missed" | "got_it";
 
 export interface QuizQuestion {
   question: string;

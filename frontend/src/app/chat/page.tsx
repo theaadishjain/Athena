@@ -9,13 +9,14 @@ import LoadingSpinner from "@/components/ui/LoadingSpinner";
 import ErrorBanner from "@/components/ui/ErrorBanner";
 import FlashcardDeck from "@/components/chat/FlashcardDeck";
 import QuizDeck, { type QuizOutcome } from "@/components/chat/QuizDeck";
-import type { ChatMessage, LoadingState } from "@/lib/types";
+import type { ChatMessage, Flashcard, LoadingState, ReviewGrade } from "@/lib/types";
 import {
   sendChatMessageStream,
   createSession,
   getSessionMessages,
   saveNote,
   saveQuizResult,
+  gradeCard,
 } from "@/lib/api";
 import { setCurrentSession, resetCurrentSession } from "@/lib/session";
 import { renderWithLatex } from "@/lib/renderMarkdown";
@@ -38,8 +39,8 @@ export default function ChatPage() {
 
 const SLASH_COMMANDS = [
   { cmd: "/plan", desc: "Generate a study plan for an upcoming exam" },
-  { cmd: "/summarize", desc: "Summarize a PDF, link, or pasted text" },
-  { cmd: "/flashcards", desc: "Create spaced-repetition cards from notes" },
+  { cmd: "/summarize", desc: "Summarize pasted text (upload files on Notes)" },
+  { cmd: "/flashcards", desc: "Make flashcards you can review on a spaced-repetition schedule" },
   { cmd: "/quiz", desc: "Quiz me on topics I'm weak at" },
   { cmd: "/explain", desc: "Explain a concept step-by-step" },
   { cmd: "/solve", desc: "Work through a problem together" },
@@ -225,6 +226,11 @@ function ChatPageContent() {
     return saveQuizResult({ topic: prompt.trim() || "General", ...outcome, session_id: currentSessionId }, token);
   }, [getToken, currentSessionId]);
 
+  const handleCardGrade = useCallback(async (prompt: string, card: Flashcard, grade: ReviewGrade): Promise<boolean> => {
+    const token = await getToken();
+    return token ? gradeCard(card, grade, prompt.trim().slice(0, 80) || "Chat flashcards", token) : false;
+  }, [getToken]);
+
   const handleSendRef = useRef(handleSend);
   useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
 
@@ -292,6 +298,7 @@ function ChatPageContent() {
                   onQuizMe={() => handleSend(`Quiz me on: ${prompt.slice(0, 200)}`)}
                   onSave={() => handleSaveAnswer(msg, prompt)}
                   onQuizComplete={(outcome) => handleQuizComplete(prompt, outcome)}
+                  onCardGrade={(card, grade) => handleCardGrade(prompt, card, grade)}
                 />
               );
             })}
@@ -418,11 +425,12 @@ interface ChatBubbleProps {
   onQuizMe: () => void;
   onSave: () => Promise<boolean>;
   onQuizComplete: (outcome: QuizOutcome) => Promise<boolean>;
+  onCardGrade: (card: Flashcard, grade: ReviewGrade) => Promise<boolean>;
 }
 
 type ActionLabel = "Copy" | "Explain more" | "Quiz me" | "Save";
 
-function ChatBubble({ message, prompt, busy, onExplainMore, onQuizMe, onSave, onQuizComplete }: ChatBubbleProps) {
+function ChatBubble({ message, prompt, busy, onExplainMore, onQuizMe, onSave, onQuizComplete, onCardGrade }: ChatBubbleProps) {
   const isUser = message.role === "user";
   const isTyping = !isUser && !message.content;
   const [flash, setFlash] = useState<{ action: ActionLabel; text: string } | null>(null);
@@ -497,7 +505,7 @@ function ChatBubble({ message, prompt, busy, onExplainMore, onQuizMe, onSave, on
           </div>
         )}
         {message.flashcards && message.flashcards.length > 0 && (
-          <FlashcardDeck flashcards={message.flashcards} />
+          <FlashcardDeck flashcards={message.flashcards} onGrade={onCardGrade} />
         )}
         {message.quiz && message.quiz.length > 0 && (
           <div className="mt-3">

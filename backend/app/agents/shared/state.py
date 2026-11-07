@@ -28,3 +28,6 @@ class AcademicState(TypedDict, total=False):
     document: Optional[dict]
     # How many flashcards to make from `document` (the Flashcards page's 10/20/30).
     requested_count: Optional[int]
+    # Planner: weak areas to prioritise, and an uploaded syllabus (plain text).
+    weak_areas: Optional[List[str]]
+    attachment: Optional[str]

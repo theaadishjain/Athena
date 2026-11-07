@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import DashboardLayout from "@/components/ui/DashboardLayout";
 import AgentBadge from "@/components/ui/AgentBadge";
 import CornerTicks from "@/components/ui/CornerTicks";
@@ -12,6 +12,7 @@ import {
   listSessions,
   getSessionMessages,
   getStudyPlan,
+  planFromSyllabus,
   getAllNotes,
   type PastSummary,
 } from "@/lib/api";
@@ -35,6 +36,10 @@ export default function StudyPlanPage() {
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [examTopic, setExamTopic] = useState("");
+  // Optional syllabus / course outline (PDF, TXT or MD) to plan from.
+  const [syllabus, setSyllabus] = useState<File | null>(null);
+  const [syllabusError, setSyllabusError] = useState<string | null>(null);
+  const syllabusRef = useRef<HTMLInputElement>(null);
   const [sessionCount, setSessionCount] = useState(3);
 
   const [studyPlan, setStudyPlan] = useState<string | null>(null);
@@ -86,7 +91,7 @@ export default function StudyPlanPage() {
 
   // Generate plan
   const handleGenerate = useCallback(async () => {
-    if (!examTopic.trim() && !selectedSessionId) return;
+    if (!examTopic.trim() && !selectedSessionId && !syllabus) return;
     if (planState === "loading") return;
 
     setPlanState("loading");
@@ -111,7 +116,9 @@ export default function StudyPlanPage() {
 
       const topicLine = examTopic.trim()
         ? `Create a detailed study schedule and exam preparation plan for: ${examTopic.trim()}.`
-        : `Create a detailed study schedule based on my recent sessions.`;
+        : syllabus
+          ? `Create a detailed study schedule and exam preparation plan for the course in my syllabus.`
+          : `Create a detailed study schedule based on my recent sessions.`;
 
       const planInput = [
         topicLine,
@@ -122,10 +129,10 @@ export default function StudyPlanPage() {
         "Format as a structured schedule with clear day-by-day breakdown.",
       ].filter(Boolean).join(" ");
 
-      const res = await getStudyPlan(
-        { session_id: selectedSessionId ?? session.session_id, input: planInput },
-        token
-      );
+      const planSession = selectedSessionId ?? session.session_id;
+      const res = syllabus
+        ? await planFromSyllabus(syllabus, planInput, planSession, token)
+        : await getStudyPlan({ session_id: planSession, input: planInput }, token);
 
       setStudyPlan(res.response);
       setMemoryUpdated(res.memory_updated);
@@ -139,9 +146,20 @@ export default function StudyPlanPage() {
       setPlanError(err instanceof Error ? err.message : "Failed to generate plan");
       setPlanState("error");
     }
-  }, [examTopic, selectedSessionId, sessionCount, sessions, planState, getToken, session.session_id, fetchPastPlans]);
+  }, [examTopic, syllabus, selectedSessionId, sessionCount, sessions, planState, getToken, session.session_id, fetchPastPlans]);
 
-  const canGenerate = planState !== "loading" && (!!examTopic.trim() || !!selectedSessionId);
+  const canGenerate = planState !== "loading" && (!!examTopic.trim() || !!selectedSessionId || !!syllabus);
+
+  const pickSyllabus = (selected: File | undefined) => {
+    if (!selected) return;
+    const ext = selected.name.slice(selected.name.lastIndexOf(".")).toLowerCase();
+    if (![".pdf", ".txt", ".md"].includes(ext)) {
+      setSyllabusError("Only .pdf, .txt and .md files are accepted.");
+      return;
+    }
+    setSyllabusError(null);
+    setSyllabus(selected);
+  };
 
   return (
     <DashboardLayout>
@@ -184,6 +202,37 @@ export default function StudyPlanPage() {
                   placeholder="e.g. Linear Algebra Midterm"
                   className="input-line text-[20px]"
                 />
+              </div>
+
+              {/* Syllabus (optional) */}
+              <div className="mb-5">
+                <div className="label mb-2">Syllabus <span className="opacity-60 normal-case tracking-normal">— optional</span></div>
+                <input
+                  ref={syllabusRef}
+                  id="studyplan-syllabus-input"
+                  type="file"
+                  accept=".pdf,.txt,.md"
+                  className="hidden"
+                  onChange={(e) => { pickSyllabus(e.target.files?.[0]); e.target.value = ""; }}
+                />
+                {syllabus ? (
+                  <div className="flex items-center gap-3 border border-line px-3 py-2.5">
+                    <span className="flex-1 truncate text-[14px] text-cream">{syllabus.name}</span>
+                    <span className="text-meta">{(syllabus.size / 1024).toFixed(1)} KB</span>
+                    <button onClick={() => setSyllabus(null)} className="btn btn-tertiary btn-sm">Remove</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => syllabusRef.current?.click()}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => { e.preventDefault(); pickSyllabus(e.dataTransfer.files[0]); }}
+                    className="dropzone w-full px-4 py-4 text-[14px] text-cream-dim"
+                    style={{ borderWidth: 1 }}
+                  >
+                    Upload your syllabus or course outline (PDF, TXT, MD) — the plan follows its topics and dates
+                  </button>
+                )}
+                {syllabusError && <div className="alert-error mt-2">{syllabusError}</div>}
               </div>
 
               {/* Base on session */}

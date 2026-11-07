@@ -6,6 +6,10 @@ from app.memory.provider import MemoryProvider
 from app.services.llm import get_llm
 
 
+WEAK_AREAS_K = 5
+SYLLABUS_HEADER = "\nCourse syllabus / outline the student uploaded (follow its topics, order and dates):\n"
+
+
 class PlannerNodes:
     def __init__(self, memory_provider: MemoryProvider) -> None:
         self.llm = get_llm(max_tokens=2000, stream_to_user=True)
@@ -23,13 +27,21 @@ class PlannerNodes:
         return state
 
     async def task_analyzer(self, state: AcademicState) -> AcademicState:
+        # Weak areas (missed quiz questions, notes found hard) get extra time.
+        state["weak_areas"] = await self.memory_provider.aread_memory(
+            state["user_id"], "weak_subjects", query=state["input"], k=WEAK_AREAS_K
+        )
         return state
 
     async def plan_generator(self, state: AcademicState) -> AcademicState:
         memory_text = "\n".join(state["memory_context"]) if state["memory_context"] else "No memory found."
+        weak_text = "\n".join(f"- {w}" for w in state.get("weak_areas") or []) or "None recorded yet."
+        attachment = state.get("attachment")
         prompt = PLANNER_PROMPT.format(
             user_input=state["input"],
             memory_context=memory_text,
+            weak_areas=weak_text,
+            attachment=f"{SYLLABUS_HEADER}{attachment}\n" if attachment else "",
             history=format_history(state.get("history")),
         )
         response = await self.llm.ainvoke(prompt)

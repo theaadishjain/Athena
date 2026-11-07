@@ -11,6 +11,8 @@ import {
   listSessions,
   getSessionMessages,
   getMemoryProfile,
+  getStats,
+  type StudyStats,
 } from "@/lib/api";
 
 function getGreeting(): string {
@@ -66,7 +68,20 @@ export default function DashboardPage() {
   const [memoryProfile, setMemoryProfile] = useState<MemoryProfile | null>(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
 
+  const [stats, setStats] = useState<StudyStats | null>(null);
+  const [statsLoaded, setStatsLoaded] = useState(false);
+
   const summaryFetchedRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getToken()
+      .then((token) => (token ? getStats(token) : null))
+      .then((data) => { if (!cancelled && data) setStats(data); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setStatsLoaded(true); });
+    return () => { cancelled = true; };
+  }, [getToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -275,7 +290,9 @@ export default function DashboardPage() {
                 icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> },
               { label: "Notes", sub: "Summarize files", agent: "Summarizer", href: "/notes",
                 icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
-              { label: "Flashcards", sub: "10 / 20 / 30 cards", agent: "Flashcard", href: "/flashcards",
+              { label: "Flashcards",
+                sub: stats && stats.review_cards > 0 ? `${stats.reviews_due} due for review` : "10 / 20 / 30 cards",
+                agent: "Flashcard", href: stats && stats.reviews_due > 0 ? "/flashcards?review=1" : "/flashcards",
                 icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="6" width="14" height="14" rx="1"/><path d="M7 3h12a2 2 0 0 1 2 2v12"/></svg> },
               { label: "Study plan", sub: "Exam schedule", agent: "Planner", href: "/studyplan",
                 icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="4" width="18" height="18" rx="1"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> },
@@ -291,7 +308,7 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          {/* Recent Activity + Agents at work */}
+          {/* Recent Activity + your activity */}
           <div className="mb-12 grid grid-cols-[1.4fr_1fr] gap-7">
 
             {/* Recent Activity */}
@@ -330,34 +347,63 @@ export default function DashboardPage() {
               )}
             </div>
 
-            {/* Agents at work */}
+            {/* Your activity: real counts from saved chats and quizzes */}
             <div className="panel">
               <div className="panel-head">
-                <span className="label">§ Agents · this session</span>
+                <span className="label">§ Agents · last {stats?.usage_days ?? 30} days</span>
+                <span className="label ml-auto">Chat replies</span>
               </div>
-              <div className="divider-row">
-                {[
-                  { agent: "Advisor", pct: 68, stat: "Q&A · conversations" },
-                  { agent: "Summarizer", pct: 42, stat: "Docs · cards generated" },
-                  { agent: "Planner", pct: 28, stat: "Plans · schedules" },
-                  { agent: "Coordinator", pct: 92, stat: "Always routing" },
-                ].map((a) => (
-                  <div key={a.agent} className="px-[18px] py-3.5">
-                    <div className="mb-2 flex items-center gap-2.5">
-                      <AgentBadge agent={a.agent} />
-                    </div>
-                    <div className="progress mb-1.5"><span style={{ width: `${a.pct}%` }} /></div>
-                    <div className="text-meta">{a.stat}</div>
+              {!statsLoaded ? (
+                <SkeletonRows rows={4} className="px-[18px] py-1.5" />
+              ) : !stats ? (
+                <p className="text-note px-[18px] py-6">Couldn&rsquo;t load your activity.</p>
+              ) : (
+                <>
+                  <div className="divider-row">
+                    {(["advisor", "planner", "summarizer", "flashcard", "quiz"] as const).map((agent) => {
+                      const count = stats.agent_counts[agent] ?? 0;
+                      const max = Math.max(1, ...Object.values(stats.agent_counts));
+                      return (
+                        <div key={agent} className="px-[18px] py-3">
+                          <div className="mb-2 flex items-center justify-between gap-2.5">
+                            <AgentBadge agent={agent} />
+                            <span className="text-meta">{count}</span>
+                          </div>
+                          <div className="progress"><span style={{ width: `${(count / max) * 100}%` }} /></div>
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
+                  <div className="border-t border-line px-[18px] py-3">
+                    <div className="label mb-2">Recent quiz scores</div>
+                    {stats.recent_quizzes.length === 0 ? (
+                      <p className="text-meta text-dim">No quizzes finished yet.</p>
+                    ) : (
+                      <div className="flex flex-col gap-1.5">
+                        {stats.recent_quizzes.map((q, i) => (
+                          <div key={i} className="flex items-center justify-between gap-3 text-[14px]">
+                            <span className="truncate text-cream-dim">{q.topic}</span>
+                            <span className="shrink-0 text-meta">{q.score}/{q.total}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
           {/* Footer colophon */}
           <div className="flex justify-between border-t border-line pt-4">
             <span className="label">{sessions.length} sessions · your study space</span>
-            <span className="label">Streak — keep going</span>
+            <span className="label">
+              {stats
+                ? stats.streak_days > 0
+                  ? `${stats.streak_days}-day streak${stats.studied_today ? "" : " — study today to keep it"}`
+                  : "No streak yet — study today to start one"
+                : " "}
+            </span>
             <span className="label">Athena · MMXXVI</span>
           </div>
 

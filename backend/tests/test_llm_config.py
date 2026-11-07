@@ -69,7 +69,7 @@ def test_backup_model_takes_over_when_the_main_one_is_busy(settings, monkeypatch
 
     chain = llm.bound  # with_config(tags) wraps the fallback runnable
     assert chain.runnable.model_name == "gemini-3.8-flash"
-    assert chain.runnable.max_retries == 1  # give up on the busy model quickly
+    assert chain.runnable.max_retries == 0  # switch to the backup at once
     assert chain.fallbacks[0].model_name == "gemini-3.5-flash-lite"
     assert chain.fallbacks[0].max_tokens == 900
     assert openai.InternalServerError in chain.exceptions_to_handle  # 503 overloaded

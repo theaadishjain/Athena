@@ -8,6 +8,7 @@ import type {
   QuizQuestion,
   ChatMessage,
   ChatSessionMeta,
+  ReviewGrade,
 } from "./types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -466,5 +467,105 @@ export async function saveQuizResult(payload: QuizResultPayload, token: string):
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+// ─── Spaced repetition ────────────────────────────────────
+// Grading a card puts it on (or moves it along) its SM-2 schedule.
+
+export interface DueCards {
+  cards: Flashcard[];
+  due_count: number;
+  total: number;
+}
+
+export async function gradeCard(
+  card: Flashcard,
+  grade: ReviewGrade,
+  deck: string,
+  token: string
+): Promise<boolean> {
+  const body = card.id != null
+    ? { card_id: card.id, grade }
+    : {
+        grade,
+        card: {
+          question: card.question.slice(0, 2000),
+          answer: card.answer.slice(0, 4000),
+          source: card.source ?? null,
+          deck: (deck || "Flashcards").slice(0, 200),
+        },
+      };
+  try {
+    const res = await fetch(`${BASE_URL}/reviews/grade`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function getDueCards(token: string, limit = 50): Promise<DueCards> {
+  try {
+    const res = await fetch(`${BASE_URL}/reviews/due?limit=${limit}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return handleResponse<DueCards>(res);
+  } catch (err) {
+    if (err instanceof ApiClientError) throw err;
+    throw new ApiClientError("Cannot reach backend");
+  }
+}
+
+// ─── Dashboard stats ──────────────────────────────────────
+
+export interface StudyStats {
+  agent_counts: Record<"advisor" | "planner" | "summarizer" | "flashcard" | "quiz", number>;
+  usage_days: number;
+  streak_days: number;
+  studied_today: boolean;
+  recent_quizzes: { topic: string; score: number; total: number; created_at: string }[];
+  reviews_due: number;
+  review_cards: number;
+}
+
+export async function getStats(token: string): Promise<StudyStats> {
+  try {
+    const offset = new Date().getTimezoneOffset();
+    const res = await fetch(`${BASE_URL}/stats?tz_offset_minutes=${offset}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return handleResponse<StudyStats>(res);
+  } catch (err) {
+    if (err instanceof ApiClientError) throw err;
+    throw new ApiClientError("Cannot reach backend");
+  }
+}
+
+// ─── Study plan from a syllabus ───────────────────────────
+
+export async function planFromSyllabus(
+  file: File,
+  input: string,
+  sessionId: string,
+  token: string
+): Promise<UnifiedResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("input", input);
+  formData.append("session_id", sessionId);
+  try {
+    const res = await fetch(`${BASE_URL}/plan/syllabus`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    return handleResponse<UnifiedResponse>(res);
+  } catch (err) {
+    if (err instanceof ApiClientError) throw err;
+    throw new ApiClientError("Cannot reach the backend. Is it running on " + BASE_URL + "?");
   }
 }

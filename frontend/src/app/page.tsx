@@ -10,22 +10,27 @@ const FEATURES = [
   {
     title: "Conversational tutoring",
     agent: "Advisor",
-    desc: "Ask anything. Athena routes to the right specialist and keeps every exchange in working memory. Context persists for the entire semester.",
+    desc: "Ask anything. Athena routes each request to the right specialist, follows the thread of your chat, and keeps a long-term memory of your topics, preferences and weak areas.",
   },
   {
     title: "Lecture summaries",
     agent: "Summarizer",
-    desc: "Drop a 60-page PDF. Receive a structured summary with key points, definitions, and precise citations in under ten seconds.",
+    desc: "Drop a 60-page PDF. Athena reads every page and streams back a structured summary — key points, definitions and a page citation for each — in seconds.",
   },
   {
-    title: "Adaptive study plans",
+    title: "Weak-spot study plans",
     agent: "Planner",
-    desc: "Hand Athena your syllabus and an exam date. Receive a realistic plan that adjusts continuously to your pace and retention rate.",
+    desc: "Hand Athena your syllabus and an exam. Get a day-by-day plan that follows the syllabus and gives extra time to the weak areas your quizzes and notes reveal.",
   },
   {
     title: "Spaced-repetition decks",
-    agent: "Summarizer",
-    desc: "Flashcards generated from your own notes. Reviewed on an SM-2 schedule weighted toward the cards you miss most often.",
+    agent: "Flashcard",
+    desc: "Flashcards from your own notes, each citing its page. Mark each one Got it or Missed it, and an SM-2 schedule brings back the cards you miss sooner.",
+  },
+  {
+    title: "Weak-spot quizzes",
+    agent: "Quiz",
+    desc: "Five scored questions at a time. Every miss is saved as a weak area, and your next quiz — and your study plan — aims straight at it.",
   },
 ];
 
@@ -143,8 +148,8 @@ export default function LandingPage() {
             <span className="label border-l border-line-strong pl-9">MMXXVI — Ed. 04</span>
           </div>
           <nav className="flex items-center gap-0.5">
-            {["Product", "Agents", "Manifesto", "Pricing"].map((item) => (
-              <button key={item} className="nav-link">{item}</button>
+            {[["Product", "#product"], ["Agents", "#agents"], ["Examples", "#examples"]].map(([item, href]) => (
+              <a key={item} href={href} className="nav-link no-underline">{item}</a>
             ))}
           </nav>
           {isSignedIn ? (
@@ -163,7 +168,7 @@ export default function LandingPage() {
       </header>
 
       {/* Hero */}
-      <section className="relative overflow-hidden px-12 pt-[130px]">
+      <section id="product" className="relative scroll-mt-20 overflow-hidden px-12 pt-[130px]">
         <OrbitBackdrop />
         <div className="relative z-[2]">
           <div className="running-head mb-12 pb-3.5">
@@ -186,14 +191,14 @@ export default function LandingPage() {
               <div className="mb-7 flex items-center gap-3">
                 <span className="inline-block h-2 w-2 shrink-0 bg-cream" />
                 <span className="eyebrow">
-                  <span className="text-cream">New</span> Agent handoff · Spring 2026
+                  <span className="text-cream">New</span> Spaced repetition · Spring 2026
                 </span>
               </div>
               <p className="text-lead mb-4 max-w-[520px] text-[21px]">
                 Athena reads your lecture notes, plans your week, and quizzes you on what you&rsquo;re weak at.
               </p>
               <p className="text-lead mb-10 max-w-[520px] text-[21px]">
-                <em className="serif-i text-[24px]">Four specialists.</em> One focused interface. No noise.
+                <em className="serif-i text-[24px]">Five specialists.</em> One focused interface. No noise.
               </p>
               <div className="flex items-center gap-3">
                 <button
@@ -236,15 +241,15 @@ export default function LandingPage() {
       </section>
 
       {/* Features */}
-      <section className="relative z-[2] px-12 pt-[100px] pb-[60px]">
+      <section id="agents" className="relative z-[2] scroll-mt-20 px-12 pt-[100px] pb-[60px]">
         <div className="mb-10 flex items-baseline justify-between">
-          <span className="label">§ 03 — The four agents</span>
-          <span className="label">Entries 01 — 04</span>
+          <span className="label">§ 03 — The five agents</span>
+          <span className="label">Entries 01 — 05</span>
         </div>
         <h2 className="h-xl mb-16 max-w-[900px] text-[72px] leading-[0.98]">
           One conversation.<br />
-          <em className="serif-i">Four specialists</em> listening<br />
-          and handing off.
+          <em className="serif-i">Five specialists,</em> and a router<br />
+          that picks the right one.
         </h2>
         <div className="border-t" style={{ borderColor: "rgba(237,232,220,0.1)" }}>
           {FEATURES.map((f, i) => (
@@ -261,7 +266,7 @@ export default function LandingPage() {
       </section>
 
       {/* Example prompts */}
-      <section className="relative z-[2] px-12 pt-20 pb-10">
+      <section id="examples" className="relative z-[2] scroll-mt-20 px-12 pt-20 pb-10">
         <div className="mb-10 flex items-baseline justify-between">
           <span className="label">§ 04 — Try saying</span>
           <span className="label">Routed automatically</span>
@@ -308,7 +313,7 @@ export default function LandingPage() {
             <span className="label mb-6 block">§ 05 — Proceed</span>
             <h3 className="h-lg mb-4 text-[56px] leading-none">Stop re-reading your notes.</h3>
             <p className="text-lead mx-auto mb-8 max-w-[460px] text-[17px]">
-              Start studying with intention. Free while you&rsquo;re enrolled.
+              Start studying with intention. Free to use.
             </p>
             <button className="btn btn-primary btn-lg" onClick={() => handleCta("/dashboard")}>Begin →</button>
           </div>

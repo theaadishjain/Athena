@@ -9,9 +9,11 @@ from app.core.config import get_settings
 STREAM_TO_USER_TAG = "stream_to_user"
 
 # Free tiers answer bursts with 429 and overload with 503; the client retries
-# those with backoff. With a backup model, give up on the main one sooner.
+# those with backoff. With a backup model, switch to it at once instead: when
+# a free daily quota is used up, retrying just waits out Google's retry-after
+# delay (a planner request took 170s that way; the backup answers in ~2s).
 MAX_RETRIES = 3
-MAX_RETRIES_WITH_FALLBACK = 1
+MAX_RETRIES_WITH_FALLBACK = 0
 
 # Errors worth switching to the backup model for (busy or rate-limited);
 # a bad key or a bad request would fail there too.

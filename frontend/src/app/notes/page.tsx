@@ -6,10 +6,10 @@ import AgentBadge from "@/components/ui/AgentBadge";
 import CornerTicks from "@/components/ui/CornerTicks";
 import FlashcardDeck from "@/components/chat/FlashcardDeck";
 import { SkeletonRows } from "@/components/ui/Skeleton";
-import type { Flashcard, UnifiedResponse, LoadingState } from "@/lib/types";
+import type { Flashcard, UnifiedResponse, LoadingState, ReviewGrade } from "@/lib/types";
 import { renderWithLatex } from "@/lib/renderMarkdown";
 import { useAuth } from "@clerk/nextjs";
-import { summarizeFileStream, flashcardsFromFile, getAllNotes, saveNote, type PastSummary } from "@/lib/api";
+import { summarizeFileStream, flashcardsFromFile, getAllNotes, saveNote, gradeCard, type PastSummary } from "@/lib/api";
 import { getOrCreateSessionId } from "@/lib/session";
 
 const ACCEPTED_TYPES = ["application/pdf", "text/plain", "text/markdown"];
@@ -285,7 +285,7 @@ export default function NotesPage() {
                       </div>
                     ) : (
                       <div>
-                        <div className="serif-i mb-1.5 text-[23px]">Drop a PDF, TXT, or paste text</div>
+                        <div className="serif-i mb-1.5 text-[23px]">Drop a PDF, TXT or Markdown file</div>
                         <div className="text-meta">Lecture notes · textbook chapter · research paper</div>
                       </div>
                     )}
@@ -388,7 +388,13 @@ export default function NotesPage() {
                       ) : cards && (
                         <>
                           <div className="label mb-3">§ Flashcards — {cards.length} cards</div>
-                          <FlashcardDeck flashcards={cards} />
+                          <FlashcardDeck
+                            flashcards={cards}
+                            onGrade={async (card: Flashcard, grade: ReviewGrade) => {
+                              const token = await getToken();
+                              return token ? gradeCard(card, grade, file?.name ?? "Notes", token) : false;
+                            }}
+                          />
                         </>
                       )}
                     </div>
