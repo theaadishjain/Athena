@@ -235,12 +235,12 @@ export default function NotesPage() {
             <span className="label">Powered by Summarizer</span>
           </div>
 
-          <div className="grid grid-cols-[1.4fr_1fr] items-start gap-7">
+          <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[1.4fr_1fr]">
 
             {/* Left: upload + summary */}
             <div>
-              <div className="mb-5 flex items-baseline justify-between">
-                <h1 className="h-md text-[48px]">
+              <div className="mb-5 flex flex-wrap items-baseline justify-between gap-3">
+                <h1 className="h-md lg:text-[48px]">
                   Drop your <em className="serif-i">lecture.</em>
                 </h1>
                 {(file || showSummary) && (
@@ -257,7 +257,7 @@ export default function NotesPage() {
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onClick={() => loadingState !== "loading" && inputRef.current?.click()}
-                    className={`dropzone min-h-[260px] gap-4 px-10 py-[52px] ${isDragOver ? "is-over" : ""} ${loadingState === "loading" ? "is-busy" : ""}`}
+                    className={`dropzone min-h-[220px] gap-4 px-5 py-10 sm:min-h-[260px] sm:px-10 sm:py-[52px] ${isDragOver ? "is-over" : ""} ${loadingState === "loading" ? "is-busy" : ""}`}
                   >
                     <CornerTicks size={10} color="rgba(237,232,220,0.3)" />
                     <input
@@ -365,7 +365,7 @@ export default function NotesPage() {
 
                     {/* Export row */}
                     {!writing && (<>
-                    <div className="mt-4 flex items-center gap-2 border-t border-line pt-3.5">
+                    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3.5">
                       <span className="label">Export →</span>
                       <button id="export-pdf-btn" onClick={handleExportPDF} className="btn btn-ghost btn-sm">PDF</button>
                       <button id="export-md-btn" onClick={exportSummaryAsMarkdown} className="btn btn-ghost btn-sm">Markdown</button>

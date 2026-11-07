@@ -226,7 +226,7 @@ export default function DashboardPage() {
                 : "Ask anything. Athena will help you study smarter, summarize your notes, and build a study plan."
               }
             </div>
-            <div className="flex gap-2.5">
+            <div className="flex flex-wrap gap-2.5">
               <button
                 onClick={() => { sessionStorage.removeItem("athena_current_session"); router.push("/chat"); }}
                 className="btn btn-primary"
@@ -246,9 +246,9 @@ export default function DashboardPage() {
               <span className="text-meta">what Athena remembers about how you learn</span>
               <span className="label ml-auto">Updated this session</span>
             </div>
-            <div className="grid grid-cols-4">
+            <div className="grid grid-cols-1 gap-px bg-line sm:grid-cols-2 lg:grid-cols-4">
               {profileCells.map((cell) => (
-                <div key={cell.title} className="min-h-[140px] border-r border-line px-5 py-[18px]">
+                <div key={cell.title} className="min-h-[140px] bg-background px-5 py-[18px]">
                   <div className="mb-3 flex items-center gap-2 text-cream">
                     {cell.icon}
                     <span className="label label-strong">{cell.title}</span>
@@ -270,7 +270,7 @@ export default function DashboardPage() {
                 </div>
               ))}
               {/* Sessions */}
-              <div className="min-h-[140px] px-5 py-[18px]">
+              <div className="min-h-[140px] bg-background px-5 py-[18px]">
                 <div className="mb-3 flex items-center gap-2 text-cream">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                   <span className="label label-strong">Sessions</span>
@@ -286,7 +286,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Quick tiles */}
-          <div className="mb-7 grid grid-cols-4 border-t border-line">
+          <div className="mb-7 grid grid-cols-2 gap-px border border-line bg-line lg:grid-cols-4">
             {[
               { label: "Chat", sub: plural(sessions.length, "session"), agent: "Advisor", href: "/chat",
                 icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> },
@@ -311,7 +311,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Recent Activity + your activity */}
-          <div className="mb-12 grid grid-cols-[1.4fr_1fr] gap-7">
+          <div className="mb-12 grid grid-cols-1 gap-7 lg:grid-cols-[1.4fr_1fr]">
 
             {/* Recent Activity */}
             <div className="panel">
@@ -397,7 +397,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Footer colophon */}
-          <div className="flex justify-between border-t border-line pt-4">
+          <div className="flex flex-wrap justify-between gap-x-6 gap-y-2 border-t border-line pt-4">
             <span className="label">{plural(sessions.length, "session")} · your study space</span>
             <span className="label">
               {stats

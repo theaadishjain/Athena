@@ -138,7 +138,7 @@ export default function LandingPage() {
         className="fixed top-0 right-0 left-0 z-20 border-b border-line"
         style={{ background: "rgba(10,10,12,0.8)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}
       >
-        <div className="mx-auto w-full max-w-[1416px] flex items-center justify-between px-12 py-[18px]">
+        <div className="mx-auto w-full max-w-[1416px] flex items-center justify-between px-4 sm:px-8 lg:px-12 py-3.5 sm:py-[18px]">
           <Logo />
           {isSignedIn ? (
             <button className="btn btn-primary btn-sm px-[18px] py-2.5" onClick={() => router.push("/dashboard")}>
@@ -156,7 +156,7 @@ export default function LandingPage() {
       </header>
 
       {/* Hero */}
-      <section id="product" className="mx-auto w-full max-w-[1416px] relative scroll-mt-20 overflow-hidden px-12 pt-[112px]">
+      <section id="product" className="mx-auto w-full max-w-[1416px] relative scroll-mt-20 overflow-hidden px-4 sm:px-8 lg:px-12 pt-24 lg:pt-[112px]">
         <OrbitBackdrop />
         <div className="relative z-[2]">
           <div className="running-head mb-10 pb-3.5">
@@ -165,7 +165,7 @@ export default function LandingPage() {
             <span className="label">P. 01 / 04</span>
           </div>
 
-          <div className="grid grid-cols-[1.05fr_1fr] items-center gap-16">
+          <div className="grid grid-cols-1 items-center gap-8 lg:grid-cols-[1.05fr_1fr] lg:gap-16">
             <div className="fade-up">
               <h1 className="h-hero">
                 Your<br />
@@ -176,19 +176,19 @@ export default function LandingPage() {
             </div>
 
             <div className="fade-up pt-6" style={{ animationDelay: "0.1s" }}>
-              <div className="mb-7 flex items-center gap-3">
+              <div className="mb-7 flex flex-wrap items-center gap-3">
                 <span className="inline-block h-2 w-2 shrink-0 bg-cream" />
                 <span className="eyebrow">
                   <span className="text-cream">New</span> Spaced repetition · Spring 2026
                 </span>
               </div>
-              <p className="text-lead mb-4 max-w-[520px] text-[21px]">
+              <p className="text-lead mb-4 max-w-[520px] text-[18px] sm:text-[21px]">
                 Athena reads your lecture notes, plans your week, and quizzes you on what you&rsquo;re weak at.
               </p>
-              <p className="text-lead mb-10 max-w-[520px] text-[21px]">
-                <em className="serif-i text-[24px]">Five specialists.</em> One focused interface. No noise.
+              <p className="text-lead mb-10 max-w-[520px] text-[18px] sm:text-[21px]">
+                <em className="serif-i text-[20px] sm:text-[24px]">Five specialists.</em> One focused interface. No noise.
               </p>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <button
                   className="btn btn-primary btn-lg"
                   onClick={() => isSignedIn ? router.push("/dashboard") : router.push("/sign-up")}
@@ -202,14 +202,14 @@ export default function LandingPage() {
                   Demo · Chat
                 </button>
               </div>
-              <div className="mt-8 grid grid-cols-[repeat(3,auto)] gap-8">
+              <div className="mt-8 grid grid-cols-[repeat(3,auto)] gap-5 sm:gap-8">
                 {[
                   { n: "5", l: "Specialist\nagents" },
                   { n: "10–30", l: "Cards per\nflashcard deck" },
                   { n: "5", l: "Scored MCQs\nper quiz" },
                 ].map((s, i) => (
                   <div key={i}>
-                    <div className="serif text-[44px] leading-none tracking-[-0.02em]">{s.n}</div>
+                    <div className="serif text-[34px] leading-none tracking-[-0.02em] sm:text-[44px]">{s.n}</div>
                     <div className="label mt-1.5 whitespace-pre-line">{s.l}</div>
                   </div>
                 ))}
@@ -219,7 +219,7 @@ export default function LandingPage() {
 
           {/* Hero mockup */}
           <div className="fade-up relative mx-auto mt-[72px] max-w-[1180px]" style={{ animationDelay: "0.3s" }}>
-            <div className="mb-5 flex items-baseline justify-between border-t border-line pt-4">
+            <div className="mb-5 flex flex-wrap items-baseline justify-between gap-2 border-t border-line pt-4">
               <span className="label">Fig. 01 — The interface</span>
               <span className="label">↓ Watch Athena think</span>
             </div>
@@ -229,14 +229,15 @@ export default function LandingPage() {
       </section>
 
       {/* Features */}
-      <section id="agents" className="mx-auto w-full max-w-[1416px] relative z-[2] scroll-mt-20 px-12 pt-[100px] pb-[60px]">
-        <div className="mb-10 flex items-baseline justify-between">
+      <section id="agents" className="mx-auto w-full max-w-[1416px] relative z-[2] scroll-mt-20 px-4 sm:px-8 lg:px-12 pt-16 pb-[60px] lg:pt-[100px]">
+        <div className="mb-10 flex flex-wrap items-baseline justify-between gap-2">
           <span className="label">§ 03 — The five agents</span>
           <span className="label">Entries 01 — 05</span>
         </div>
-        <h2 className="h-xl mb-16 max-w-[900px] text-[72px] leading-[0.98]">
+        <h2 className="h-xl mb-10 max-w-[900px] text-[38px] leading-[0.98] sm:mb-16 sm:text-[56px] lg:text-[72px]">
           One conversation.<br />
-          <em className="serif-i">Five specialists,</em> and a router<br />
+          <em className="serif-i">Five specialists,</em> and a router{" "}
+          <br className="hidden md:inline" />
           that picks the right one.
         </h2>
         <div className="border-t" style={{ borderColor: "rgba(237,232,220,0.1)" }}>
@@ -254,8 +255,8 @@ export default function LandingPage() {
       </section>
 
       {/* Example prompts */}
-      <section id="examples" className="mx-auto w-full max-w-[1416px] relative z-[2] scroll-mt-20 px-12 pt-20 pb-10">
-        <div className="mb-10 flex items-baseline justify-between">
+      <section id="examples" className="mx-auto w-full max-w-[1416px] relative z-[2] scroll-mt-20 px-4 sm:px-8 lg:px-12 pt-16 pb-10 lg:pt-20">
+        <div className="mb-10 flex flex-wrap items-baseline justify-between gap-2">
           <span className="label">§ 04 — Try saying</span>
           <span className="label">Routed automatically</span>
         </div>
@@ -269,14 +270,14 @@ export default function LandingPage() {
             <div className="text-meta mt-0.5">{EXAMPLES[0].result}</div>
           </div>
         </div>
-        <div className="grid grid-cols-2 border-t" style={{ borderColor: "rgba(237,232,220,0.1)" }}>
+        <div className="grid grid-cols-1 border-t md:grid-cols-2" style={{ borderColor: "rgba(237,232,220,0.1)" }}>
           {EXAMPLES.slice(1).map((t, i) => (
             <div
               key={i}
-              className={`border-b p-8 ${i === 0 ? "border-r pl-0" : ""}`}
+              className={`border-b px-0 py-8 md:px-8 ${i === 0 ? "md:border-r md:pl-0" : ""}`}
               style={{ borderColor: "rgba(237,232,220,0.1)" }}
             >
-              <p className="serif mb-6 text-[21px] leading-[1.4]">&ldquo;{t.prompt}&rdquo;</p>
+              <p className="serif mb-6 text-[19px] leading-[1.4] sm:text-[21px]">&ldquo;{t.prompt}&rdquo;</p>
               <div className="flex items-center gap-2.5">
                 <div className="avatar avatar-round h-8 w-8 text-[12px]">{t.initials}</div>
                 <div>
@@ -290,8 +291,8 @@ export default function LandingPage() {
       </section>
 
       {/* CTA */}
-      <section className="mx-auto w-full max-w-[1416px] relative z-[2] px-12 pt-[60px] pb-20">
-        <div className="relative overflow-hidden border px-12 py-16" style={{ borderColor: "rgba(237,232,220,0.15)" }}>
+      <section className="mx-auto w-full max-w-[1416px] relative z-[2] px-4 sm:px-8 lg:px-12 pt-[60px] pb-20">
+        <div className="relative overflow-hidden border px-6 py-12 sm:px-12 sm:py-16" style={{ borderColor: "rgba(237,232,220,0.15)" }}>
           <CornerTicks size={10} />
           <div className="glow-radial" style={{
             width: 500, height: 500, top: -200, left: "50%", transform: "translateX(-50%)",
@@ -299,14 +300,14 @@ export default function LandingPage() {
           }} />
           <div className="relative text-center">
             <span className="label mb-6 block">§ 05 — Proceed</span>
-            <h3 className="h-lg mb-4 text-[56px] leading-none">Stop re-reading your notes.</h3>
+            <h3 className="h-lg mb-4 text-[36px] leading-none sm:text-[48px] lg:text-[56px]">Stop re-reading your notes.</h3>
             <p className="text-lead mx-auto mb-8 max-w-[460px] text-[17px]">
               Start studying with intention. Free to use.
             </p>
             <button className="btn btn-primary btn-lg" onClick={() => handleCta("/dashboard")}>Begin →</button>
           </div>
         </div>
-        <div className="mt-10 flex justify-between border-t border-line pt-5">
+        <div className="mt-10 flex flex-wrap justify-between gap-x-6 gap-y-2 border-t border-line pt-5">
           <span className="label">Athena · AMDG · MMXXVI</span>
           <span className="label">Set in Fraunces + Figtree</span>
           <span className="label">Built for one purpose</span>
@@ -324,19 +325,19 @@ function HeroMockup({ onCta }: { onCta: () => void }) {
         <div className="flex gap-[5px]">
           {[0, 1, 2].map(i => <span key={i} className="h-[9px] w-[9px] rounded-full border" style={{ borderColor: "rgba(237,232,220,0.15)" }} />)}
         </div>
-        <span className="text-meta ml-3">athena.app · linear-algebra-final · 14:32</span>
+        <span className="text-meta ml-3 min-w-0 truncate">athena.app · linear-algebra-final · 14:32</span>
         <span className="label ml-auto">Live</span>
         <span className="pulse-dot h-1.5 w-1.5" style={{ animationDuration: "2s" }} />
       </div>
-      <div className="flex h-[480px]">
-        <div className="w-[210px] border-r border-line px-3 py-4">
+      <div className="flex md:h-[480px]">
+        <div className="hidden w-[210px] shrink-0 border-r border-line px-3 py-4 md:block">
           <div className="px-2 pt-1 pb-4"><span className="serif-i text-[15px]">Athena</span></div>
           <div className="label px-2.5 pt-2.5 pb-1.5 text-[10px]">Recent</div>
           {["Linear algebra final", "Neural nets · ch. 3", "OrgChem mechanisms", "Macroecon PS #5"].map((s, i) => (
             <div key={s} className={`nav-item mb-px py-[7px] text-[13px] ${i === 0 ? "is-active" : ""}`}>{s}</div>
           ))}
         </div>
-        <div className="flex flex-1 flex-col gap-[18px] overflow-hidden p-7">
+        <div className="flex min-w-0 flex-1 flex-col gap-[18px] overflow-hidden p-4 sm:p-7">
           <div className="max-w-[72%] self-end">
             <div className="bubble-user max-w-none text-[14px]">
               Can you help me understand eigenvectors? Midterm Wednesday, I&rsquo;m stuck.
@@ -348,7 +349,7 @@ function HeroMockup({ onCta }: { onCta: () => void }) {
             <span className="label text-dim">→ Routed</span>
             <AgentBadge agent="Planner" />
           </div>
-          <div className="max-w-[80%] border border-line px-4 py-3.5 text-[14px] leading-[1.6] text-cream" style={{ background: "rgba(237,232,220,0.02)" }}>
+          <div className="border border-line px-4 py-3.5 sm:max-w-[80%] text-[14px] leading-[1.6] text-cream" style={{ background: "rgba(237,232,220,0.02)" }}>
             Let&rsquo;s build a 3-day plan. An eigenvector{" "}
             <code className="px-1.5 py-px font-mono text-[12px]" style={{ background: "rgba(237,232,220,0.08)" }}>v</code> of matrix{" "}
             <code className="px-1.5 py-px font-mono text-[12px]" style={{ background: "rgba(237,232,220,0.08)" }}>A</code> satisfies{" "}

@@ -322,7 +322,7 @@ export default function StudyPlanPage() {
                 </div>
                 {memoryUpdated && <span className="text-meta">✓ Saved to memory</span>}
               </div>
-              <div className="px-7 py-6">
+              <div className="px-5 py-6 sm:px-7">
                 <div className="prose-chat" dangerouslySetInnerHTML={{ __html: renderWithLatex(studyPlan) }} />
               </div>
             </div>

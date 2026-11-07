@@ -272,18 +272,18 @@ function ChatPageContent() {
 
   return (
     <DashboardLayout>
-      <div className="relative flex h-screen flex-col">
+      <div className="chat-screen relative flex flex-col">
 
         {/* Chat Header */}
         <header className="topbar">
           <div className="flex items-center gap-3.5">
-            <span className="label">§ Session</span>
+            <span className="label hidden sm:inline">§ Session</span>
             <h2 className="serif-i text-[19px]">
               {messages.length > 0 ? "Conversation" : "New chat"}
             </h2>
           </div>
           <div className="flex items-center gap-2">
-            <span className="label mr-1">{plural(messages.length, "message")}</span>
+            <span className="label mr-1 hidden sm:inline">{plural(messages.length, "message")}</span>
             {messages.length > 0 && (
               <button id="export-chat-btn" onClick={exportChatAsMarkdown} className="btn btn-subtle btn-sm">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -294,7 +294,7 @@ function ChatPageContent() {
                 Export
               </button>
             )}
-            <button id="new-chat-btn" onClick={handleNewChat} className="btn btn-subtle btn-sm">
+            <button id="new-chat-btn" onClick={handleNewChat} className="btn btn-subtle btn-sm hidden md:inline-flex">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19"/>
                 <line x1="5" y1="12" x2="19" y2="12"/>
@@ -305,7 +305,7 @@ function ChatPageContent() {
         </header>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-7 pt-7 pb-[120px]">
+        <div className="flex-1 overflow-y-auto px-4 pt-5 pb-[120px] sm:px-7 sm:pt-7">
           <div className="mx-auto flex max-w-[820px] flex-col gap-6">
 
             {historyLoading && messages.length === 0 && <HistorySkeleton />}
@@ -340,12 +340,12 @@ function ChatPageContent() {
 
         {/* Welcome state */}
         {messages.length === 0 && loadingState !== "loading" && !historyLoading && (
-          <div className="pointer-events-none absolute top-1/2 left-1/2 w-full max-w-[560px] -translate-x-1/2 -translate-y-1/2 px-7 text-center">
+          <div className="pointer-events-none absolute top-1/2 left-1/2 w-full max-w-[560px] -translate-x-1/2 -translate-y-1/2 px-5 text-center sm:px-7">
             <div className="glow-radial" style={{
               width: 600, height: 600, top: -200, left: "50%", transform: "translateX(-50%)",
               background: "radial-gradient(circle, rgba(237,232,220,0.04), transparent 70%)",
             }} />
-            <h1 className="h-lg mb-4 text-[60px] leading-[0.98]">
+            <h1 className="h-lg mb-4 text-[40px] leading-[0.98] sm:text-[52px] lg:text-[60px]">
               What are<br />
               <em className="serif-i">we studying</em><br />
               today?
@@ -397,7 +397,7 @@ function ChatPageContent() {
                 className="composer-input"
               />
               <div className="flex items-center gap-1 px-1.5 pt-1 pb-1.5">
-                <span className="label ml-auto flex items-center gap-1">
+                <span className="label ml-auto hidden items-center gap-1 sm:flex">
                   <span className="kbd">/</span> commands
                   <span className="mx-1">·</span>
                   <span className="kbd">⇧</span><span className="kbd">↵</span> new line
@@ -508,7 +508,7 @@ function ChatBubble({ message, prompt, busy, onExplainMore, onQuizMe, onSave, on
   return (
     <div className="animate-fade-in flex items-start gap-3.5">
       <div className="avatar mt-0.5">A</div>
-      <div className="min-w-0 max-w-[85%] flex-1">
+      <div className="min-w-0 flex-1 sm:max-w-[85%]">
         <div className="mb-2.5 flex items-center gap-2.5">
           <span className="serif-i text-[15px]">Athena</span>
           {message.agent && <AgentBadge agent={message.agent} />}
@@ -530,7 +530,7 @@ function ChatBubble({ message, prompt, busy, onExplainMore, onQuizMe, onSave, on
         )}
         {/* Action row */}
         {!isTyping && message.content && (
-          <div className="mt-2.5 flex">
+          <div className="mt-2.5 flex flex-wrap">
             {actions.map((a) => (
               <button key={a} type="button" disabled={isDisabled(a)} className="action-link" onClick={() => runAction(a)}>
                 {flash?.action === a ? flash.text : a}

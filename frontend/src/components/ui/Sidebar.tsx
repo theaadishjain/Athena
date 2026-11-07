@@ -186,6 +186,7 @@ export default function Sidebar() {
     sessionStorage.removeItem(CURRENT_KEY);
     sessionStorage.removeItem(LEGACY_KEY);
     setActiveSessionId(null);
+    setMenuOpen(false);
     router.push("/chat?new=" + Date.now());
   }, [router]);
 
@@ -203,9 +204,21 @@ export default function Sidebar() {
     return () => window.removeEventListener("keydown", onKey);
   }, [handleNewChat]);
 
+  // Phone menu drawer.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const searchKey = typeof window === "undefined" ? "" : window.location.search;
+  useEffect(() => { setMenuOpen(false); }, [pathname, searchKey]);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
+
   const handleSessionClick = useCallback((session: ChatSessionMeta) => {
     setCurrentSession(session.id);
     setActiveSessionId(session.id);
+    setMenuOpen(false);
     router.push("/chat?sid=" + session.id);
   }, [router]);
 
@@ -253,103 +266,146 @@ export default function Sidebar() {
     user?.emailAddresses?.[0]?.emailAddress?.[0]?.toUpperCase() ?? "A";
   const userName = user?.firstName ? `${user.firstName}${user.lastName ? " " + user.lastName : ""}` : "Student";
 
+  const sidebarBody = (
+    <>
+      {/* Logo */}
+      <div className="flex items-center justify-between px-[18px] pt-0.5 pb-3.5">
+        <Link href="/" className="no-underline"><Logo /></Link>
+        {/* Hidden in the phone drawer, where the close button sits here. */}
+        <span className="label hidden text-[10px] md:inline">v4.0</span>
+      </div>
+
+      {/* New Chat */}
+      <div className="px-3 pb-2.5 mb-2.5 border-b border-line">
+        <button
+          onClick={handleNewChat}
+          aria-keyshortcuts={isMac ? "Meta+K" : "Control+K"}
+          title={`New chat (${isMac ? "⌘K" : "Ctrl+K"})`}
+          className="btn btn-primary btn-block justify-start text-[13.5px] py-2.5 px-3"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          New Chat
+          <span className="ml-auto hidden gap-0.5 md:flex">
+            <span className="kbd" style={{ background: "rgba(0,0,0,0.12)", borderColor: "rgba(0,0,0,0.2)", color: "rgba(10,10,12,0.7)" }}>{isMac ? "⌘" : "Ctrl"}</span>
+            <span className="kbd" style={{ background: "rgba(0,0,0,0.12)", borderColor: "rgba(0,0,0,0.2)", color: "rgba(10,10,12,0.7)" }}>K</span>
+          </span>
+        </button>
+      </div>
+
+      {/* Nav */}
+      <nav className="px-3">
+        {NAV_ITEMS.map((item) => {
+          const active = pathname === item.href || pathname.startsWith(item.href + "/");
+          return (
+            <Link key={item.label} href={item.href} className={`nav-item ${active ? "is-active" : ""}`}>
+              {item.icon}
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Recent sessions */}
+      <div className="px-[18px] pt-5 pb-2">
+        <span className="label text-[10.5px]">§ Recent</span>
+      </div>
+
+      <div className="flex-1 overflow-auto px-3">
+        {!loaded ? (
+          <SkeletonRows rows={5} meta={false} className="px-3" />
+        ) : sessions.length === 0 ? (
+          <p className="text-meta px-3 py-1">No chats yet</p>
+        ) : (
+          sessions.map((s) => {
+            const isActive = s.id === activeSessionId && pathname === "/chat";
+            return (
+              <div
+                key={s.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => handleSessionClick(s)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSessionClick(s); } }}
+                className={`session-row nav-item text-[13.5px] py-[7px] cursor-pointer ${isActive ? "is-active" : ""}`}
+              >
+                <span className="flex-1 truncate">{s.title}</span>
+                <span className="shrink-0 text-[11px] text-dim">{relativeTime(s.created_at)}</span>
+                <button
+                  type="button"
+                  className="row-delete"
+                  aria-label={`Delete chat “${s.title}”`}
+                  onClick={(e) => handleDelete(e, s)}
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* User */}
+      <div className="p-3 border-t border-line">
+        <div className="flex items-center gap-2.5 px-2 py-1.5">
+          <div className="avatar avatar-sm">{userInitial}</div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[14px] text-cream font-medium leading-tight truncate">{userName}</div>
+            <div className="text-[11.5px] text-dim mt-0.5 truncate">
+              {user?.emailAddresses?.[0]?.emailAddress ?? "Student"}
+            </div>
+          </div>
+          <UserButton showName={false} />
+        </div>
+      </div>
+    </>
+  );
+
   return (
     <>
+      {/* Phones: a top bar with a menu button; the sidebar opens as a drawer. */}
+      <header className="mobile-bar md:hidden">
+        <button
+          type="button"
+          onClick={() => setMenuOpen(true)}
+          aria-label="Open menu"
+          aria-expanded={menuOpen}
+          className="btn btn-tertiary btn-sm px-2"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+            <line x1="4" y1="7" x2="20" y2="7"/>
+            <line x1="4" y1="12" x2="20" y2="12"/>
+            <line x1="4" y1="17" x2="20" y2="17"/>
+          </svg>
+        </button>
+        <Link href="/dashboard" className="no-underline"><Logo /></Link>
+        <button type="button" onClick={handleNewChat} className="btn btn-primary btn-sm">+ New</button>
+      </header>
+
+      {menuOpen && (
+        <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setMenuOpen(false)} />
+          <aside className="drawer absolute inset-y-0 left-0 flex w-[280px] max-w-[85vw] flex-col border-r border-line py-[18px]">
+            <button
+              type="button"
+              onClick={() => setMenuOpen(false)}
+              aria-label="Close menu"
+              className="btn btn-tertiary btn-sm absolute top-3 right-2 px-2 text-[18px]"
+            >
+              ×
+            </button>
+            {sidebarBody}
+          </aside>
+        </div>
+      )}
+
+      {/* Tablets and desktops: the fixed sidebar. */}
       <aside
         className="hidden md:flex flex-col shrink-0 sticky top-0 z-40 h-screen w-[248px] py-[18px] border-r border-line"
         style={{ background: "rgba(237,232,220,0.012)" }}
       >
-        {/* Logo */}
-        <div className="flex items-center justify-between px-[18px] pt-0.5 pb-3.5">
-          <Link href="/" className="no-underline"><Logo /></Link>
-          <span className="label text-[10px]">v4.0</span>
-        </div>
-
-        {/* New Chat */}
-        <div className="px-3 pb-2.5 mb-2.5 border-b border-line">
-          <button
-            id="sidebar-new-chat"
-            onClick={handleNewChat}
-            aria-keyshortcuts={isMac ? "Meta+K" : "Control+K"}
-            title={`New chat (${isMac ? "⌘K" : "Ctrl+K"})`}
-            className="btn btn-primary btn-block justify-start text-[13.5px] py-2.5 px-3"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19"/>
-              <line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            New Chat
-            <span className="ml-auto flex gap-0.5">
-              <span className="kbd" style={{ background: "rgba(0,0,0,0.12)", borderColor: "rgba(0,0,0,0.2)", color: "rgba(10,10,12,0.7)" }}>{isMac ? "⌘" : "Ctrl"}</span>
-              <span className="kbd" style={{ background: "rgba(0,0,0,0.12)", borderColor: "rgba(0,0,0,0.2)", color: "rgba(10,10,12,0.7)" }}>K</span>
-            </span>
-          </button>
-        </div>
-
-        {/* Nav */}
-        <nav className="px-3">
-          {NAV_ITEMS.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(item.href + "/");
-            return (
-              <Link key={item.label} href={item.href} className={`nav-item ${active ? "is-active" : ""}`}>
-                {item.icon}
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-
-        {/* Recent sessions */}
-        <div className="px-[18px] pt-5 pb-2">
-          <span className="label text-[10.5px]">§ Recent</span>
-        </div>
-
-        <div className="flex-1 overflow-auto px-3">
-          {!loaded ? (
-            <SkeletonRows rows={5} meta={false} className="px-3" />
-          ) : sessions.length === 0 ? (
-            <p className="text-meta px-3 py-1">No chats yet</p>
-          ) : (
-            sessions.map((s) => {
-              const isActive = s.id === activeSessionId && pathname === "/chat";
-              return (
-                <div
-                  key={s.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => handleSessionClick(s)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSessionClick(s); } }}
-                  className={`session-row nav-item text-[13.5px] py-[7px] cursor-pointer ${isActive ? "is-active" : ""}`}
-                >
-                  <span className="flex-1 truncate">{s.title}</span>
-                  <span className="shrink-0 text-[11px] text-dim">{relativeTime(s.created_at)}</span>
-                  <button
-                    type="button"
-                    className="row-delete"
-                    aria-label={`Delete chat “${s.title}”`}
-                    onClick={(e) => handleDelete(e, s)}
-                  >
-                    ×
-                  </button>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* User */}
-        <div className="p-3 border-t border-line">
-          <div className="flex items-center gap-2.5 px-2 py-1.5">
-            <div className="avatar avatar-sm">{userInitial}</div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[14px] text-cream font-medium leading-tight truncate">{userName}</div>
-              <div className="text-[11.5px] text-dim mt-0.5 truncate">
-                {user?.emailAddresses?.[0]?.emailAddress ?? "Student"}
-              </div>
-            </div>
-            <UserButton showName={false} />
-          </div>
-        </div>
+        {sidebarBody}
       </aside>
 
       {pending && (

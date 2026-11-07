@@ -226,7 +226,7 @@ export default function FlashcardsPage() {
                   <button onClick={finishReview} className="btn btn-tertiary btn-sm">Done reviewing</button>
                 </div>
               ) : (
-                <div className="flex items-center gap-4 px-5 py-4">
+                <div className="flex flex-wrap items-center gap-4 px-5 py-4">
                   <span className="serif-i text-[30px] leading-none">{due.due_count}</span>
                   <span className="text-note flex-1">
                     {due.due_count > 0
