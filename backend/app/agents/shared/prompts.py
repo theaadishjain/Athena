@@ -12,6 +12,7 @@ Rules for your response:
 You are StudyCo Planner Agent.
 Create a practical study schedule and task plan.
 Use concise bullet points and include next actions.
+{history}
 User input: {user_input}
 Memory context:
 {memory_context}
@@ -21,6 +22,7 @@ SUMMARIZER_PROMPT = """You are StudyCo Summarizer Agent.
 Summarize the provided lecture/note content clearly.
 Include key concepts and a short revision checklist.
 Always complete your response fully. Never end mid-sentence or mid-point. If the content is long, prioritize completing each section over covering every section.
+{history}
 User input: {user_input}
 Memory context:
 {memory_context}
@@ -54,7 +56,27 @@ Rules for both modes:
 - Mention past context in ONE sentence max
 - Use markdown code blocks for any code (```python, ```cpp etc)
 
+Long-term memory about this student:
 {memory_context}
 
+{history}
 User: {user_input}
 """
+
+
+HISTORY_CHAR_LIMIT = 1500
+
+
+def format_history(history: list | None) -> str:
+    """Render earlier turns so the model can follow up ("explain more", "why?")."""
+    if not history:
+        return ""
+    lines = ["Conversation so far (oldest first):"]
+    for msg in history:
+        speaker = "Student" if msg.get("role") == "user" else "Athena"
+        content = (msg.get("content") or "").strip()
+        if len(content) > HISTORY_CHAR_LIMIT:
+            content = content[:HISTORY_CHAR_LIMIT] + " [...]"
+        lines.append(f"{speaker}: {content}")
+    lines.append("Answer the student's latest message below, using the conversation for context.")
+    return "\n".join(lines) + "\n"

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
@@ -28,18 +27,20 @@ const FEATURES = [
   },
 ];
 
-const TESTIMONIALS = [
+// Real example prompts and the agent that handles each one. (Replace with
+// genuine, attributed user feedback once you have it.)
+const EXAMPLES = [
   {
-    quote: "I went from a 73 on the first midterm to a 91 on the second. The flashcards Athena made from my own lecture notes — not some generic deck — were the difference.",
-    name: "Maya Chen", school: "CS · MIT '26", initials: "MC",
+    prompt: "I have a data structures exam in 3 days. Help me plan.",
+    agent: "Planner", result: "Day-by-day schedule, saved to your notes", initials: "P",
   },
   {
-    quote: "The Planner noticed I'd forgotten to budget for my orgo lab report. Saved my semester.",
-    name: "Jordan Ruiz", school: "Biochem · Stanford '25", initials: "JR",
+    prompt: "Create 20 flashcards on binary trees.",
+    agent: "Flashcards", result: "20 flip cards you can review in chat", initials: "F",
   },
   {
-    quote: "Finally, an AI that doesn't vomit walls of text. It watches what I'm confused about and quizzes me on precisely that.",
-    name: "Amelia Park", school: "Math · Berkeley '27", initials: "AP",
+    prompt: "Quiz me on photosynthesis.",
+    agent: "Quiz", result: "5 multiple-choice questions, scored instantly", initials: "Q",
   },
 ];
 
@@ -305,9 +306,9 @@ export default function LandingPage() {
               </div>
               <div style={{ marginTop: 32, display: "grid", gridTemplateColumns: "repeat(3, auto)", gap: 32 }}>
                 {[
-                  { n: "214K", l: "Study\nsessions" },
-                  { n: "48H", l: "Avg. time\nsaved / wk" },
-                  { n: "+19%", l: "Median grade\nimprovement" },
+                  { n: "5", l: "Specialist\nagents" },
+                  { n: "10–30", l: "Cards per\nflashcard deck" },
+                  { n: "5", l: "Scored MCQs\nper quiz" },
                 ].map((s, i) => (
                   <div key={i}>
                     <div style={{ fontFamily: "var(--font-head)", fontSize: 44, color: "var(--cream)", lineHeight: 1, letterSpacing: "-0.02em" }}>{s.n}</div>
@@ -356,11 +357,11 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Testimonials */}
+      {/* Example prompts */}
       <section style={{ padding: "80px 48px 40px", position: "relative", zIndex: 2 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 40 }}>
-          <span className="sect-num">§ 04 — FIELD NOTES</span>
-          <span className="sect-num">214,000 SESSIONS · SPRING SEMESTER</span>
+          <span className="sect-num">§ 04 — TRY SAYING</span>
+          <span className="sect-num">ROUTED AUTOMATICALLY</span>
         </div>
         <h2 style={{
           fontSize: 52, lineHeight: 1.02,
@@ -368,7 +369,7 @@ export default function LandingPage() {
           letterSpacing: "-0.02em", color: "var(--cream)",
           marginBottom: 56, maxWidth: 800, margin: "0 0 56px",
         }}>
-          &ldquo;{TESTIMONIALS[0].quote}&rdquo;
+          &ldquo;{EXAMPLES[0].prompt}&rdquo;
         </h2>
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 60 }}>
           <div style={{
@@ -376,14 +377,14 @@ export default function LandingPage() {
             background: "rgba(237,232,220,0.1)", border: "1px solid var(--cream-ghost)",
             display: "flex", alignItems: "center", justifyContent: "center",
             color: "var(--cream)", fontSize: 14, fontFamily: "var(--font-head)", fontStyle: "italic",
-          }}>{TESTIMONIALS[0].initials}</div>
+          }}>{EXAMPLES[0].initials}</div>
           <div>
-            <div style={{ fontSize: 15, color: "var(--cream)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>{TESTIMONIALS[0].name}</div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)", letterSpacing: "0.04em", textTransform: "uppercase", marginTop: 2 }}>{TESTIMONIALS[0].school}</div>
+            <div style={{ fontSize: 15, color: "var(--cream)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>{EXAMPLES[0].agent} agent</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)", letterSpacing: "0.04em", textTransform: "uppercase", marginTop: 2 }}>{EXAMPLES[0].result}</div>
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", borderTop: "1px solid rgba(237,232,220,0.1)" }}>
-          {TESTIMONIALS.slice(1).map((t, i) => (
+          {EXAMPLES.slice(1).map((t, i) => (
             <div key={i} style={{
               padding: "32px",
               paddingLeft: i === 0 ? 0 : 32,
@@ -391,7 +392,7 @@ export default function LandingPage() {
               borderBottom: "1px solid rgba(237,232,220,0.1)",
             }}>
               <p style={{ fontSize: 20, color: "var(--cream)", lineHeight: 1.4, letterSpacing: "-0.005em", fontFamily: "var(--font-head)", marginBottom: 24, margin: "0 0 24px" }}>
-                &ldquo;{t.quote}&rdquo;
+                &ldquo;{t.prompt}&rdquo;
               </p>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{
@@ -401,8 +402,8 @@ export default function LandingPage() {
                   color: "var(--cream)", fontSize: 11, fontFamily: "var(--font-head)", fontStyle: "italic",
                 }}>{t.initials}</div>
                 <div>
-                  <div style={{ fontSize: 13, color: "var(--cream)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>{t.name}</div>
-                  <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", letterSpacing: "0.05em", textTransform: "uppercase" }}>{t.school}</div>
+                  <div style={{ fontSize: 13, color: "var(--cream)", fontFamily: "var(--font-head)", fontStyle: "italic" }}>{t.agent} agent</div>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", letterSpacing: "0.05em", textTransform: "uppercase" }}>{t.result}</div>
                 </div>
               </div>
             </div>

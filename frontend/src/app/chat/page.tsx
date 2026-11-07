@@ -2,20 +2,21 @@
 
 import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAuth, useUser } from "@clerk/nextjs";
+import { useAuth } from "@clerk/nextjs";
 import DashboardLayout from "@/components/ui/DashboardLayout";
 import AgentBadge from "@/components/ui/AgentBadge";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
 import ErrorBanner from "@/components/ui/ErrorBanner";
 import FlashcardDeck from "@/components/chat/FlashcardDeck";
+import QuizDeck from "@/components/chat/QuizDeck";
 import type { ChatMessage, LoadingState } from "@/lib/types";
 import {
   sendChatMessageStream,
   createSession,
   getSessionMessages,
-  saveMessage,
+  saveNote,
 } from "@/lib/api";
-import { useSession, setCurrentSession, resetCurrentSession } from "@/lib/session";
+import { setCurrentSession, resetCurrentSession } from "@/lib/session";
 import { renderWithLatex } from "@/lib/renderMarkdown";
 
 export default function ChatPage() {
@@ -46,9 +47,7 @@ function ChatPageContent() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const pendingQueryRef = useRef<string | null>(null);
-  const session = useSession();
   const { getToken } = useAuth();
-  const { user } = useUser();
 
   useEffect(() => {
     setShowSlash(input.startsWith("/"));
@@ -149,8 +148,6 @@ function ChatPageContent() {
     setLoadingState("loading");
     setError(null);
 
-    let finalContent = "";
-    let finalAgent = "";
     let activeSessionId = currentSessionId;
 
     if (!activeSessionId) {
@@ -168,34 +165,44 @@ function ChatPageContent() {
       }
     }
 
+    // The backend saves both messages (including flashcards / quiz) itself.
+    const assistantId = assistantMessage.id;
+    const patchAssistant = (patch: (m: ChatMessage) => ChatMessage) =>
+      setMessages((prev) => prev.map((m) => (m.id === assistantId ? patch(m) : m)));
+
     await sendChatMessageStream(
       { session_id: activeSessionId as string, input: trimmed },
       await getToken() as string,
       (token) => {
-        finalContent += token;
-        setMessages((prev) => {
-          const updated = [...prev];
-          updated[updated.length - 1] = { ...updated[updated.length - 1], content: updated[updated.length - 1].content + token };
-          return updated;
-        });
+        patchAssistant((m) => ({ ...m, content: m.content + token }));
       },
       (meta) => {
-        finalAgent = meta.agent;
-        setMessages((prev) => {
-          const updated = [...prev];
-          updated[updated.length - 1] = { ...updated[updated.length - 1], agent: meta.agent, flashcards: meta.flashcards };
-          return updated;
-        });
+        patchAssistant((m) => ({
+          ...m,
+          // Final text from the server: covers agents that don't stream
+          // (flashcards, quiz) and replaces partial text on fallback.
+          content: meta.content || m.content,
+          agent: meta.agent,
+          flashcards: meta.flashcards,
+          quiz: meta.quiz,
+        }));
         setLoadingState("success");
-        getToken().then((tok) => {
-          if (!tok || !activeSessionId) return;
-          saveMessage(activeSessionId, { role: "user", content: trimmed }, tok).catch(() => {});
-          saveMessage(activeSessionId, { role: "assistant", content: finalContent, agent: finalAgent }, tok).catch(() => {});
-        });
       },
-      (errorMessage) => { setError(errorMessage); setLoadingState("error"); }
+      (errorMessage) => {
+        // Drop the empty "thinking" bubble so it doesn't spin forever.
+        setMessages((prev) => prev.filter((m) => m.id !== assistantId || m.content));
+        setError(errorMessage);
+        setLoadingState("error");
+      }
     );
-  }, [input, loadingState, session, currentSessionId, getToken]);
+  }, [input, loadingState, currentSessionId, getToken]);
+
+  const handleSaveAnswer = useCallback(async (message: ChatMessage, prompt: string): Promise<boolean> => {
+    const token = await getToken();
+    if (!token || !currentSessionId) return false;
+    const title = prompt.trim() ? prompt.trim().slice(0, 60) : "Chat answer";
+    return saveNote(currentSessionId, title, message.content, token);
+  }, [getToken, currentSessionId]);
 
   const handleSendRef = useRef(handleSend);
   useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
@@ -293,11 +300,18 @@ function ChatPageContent() {
               </div>
             )}
 
-            {messages.map((msg) => (
-              <ChatBubble key={msg.id} message={msg}
-                userInitial={user?.firstName?.[0]?.toUpperCase() ?? user?.emailAddresses?.[0]?.emailAddress?.[0]?.toUpperCase() ?? "U"}
-              />
-            ))}
+            {messages.map((msg, i) => {
+              // The user message this reply answers, for "Quiz me" / "Save".
+              const prompt = messages.slice(0, i).reverse().find((m) => m.role === "user")?.content ?? "";
+              return (
+                <ChatBubble key={msg.id} message={msg} prompt={prompt}
+                  busy={loadingState === "loading"}
+                  onExplainMore={() => handleSend("Explain that in more detail, with an example.")}
+                  onQuizMe={() => handleSend(`Quiz me on: ${prompt.slice(0, 200)}`)}
+                  onSave={() => handleSaveAnswer(msg, prompt)}
+                />
+              );
+            })}
 
             {error && <ErrorBanner message={error} onRetry={() => setError(null)} />}
             <div ref={messagesEndRef} />
@@ -430,9 +444,49 @@ function ChatPageContent() {
   );
 }
 
-function ChatBubble({ message, userInitial }: { message: ChatMessage; userInitial: string }) {
+interface ChatBubbleProps {
+  message: ChatMessage;
+  prompt: string;
+  busy: boolean;
+  onExplainMore: () => void;
+  onQuizMe: () => void;
+  onSave: () => Promise<boolean>;
+}
+
+type ActionLabel = "Copy" | "Explain more" | "Quiz me" | "Save";
+
+function ChatBubble({ message, prompt, busy, onExplainMore, onQuizMe, onSave }: ChatBubbleProps) {
   const isUser = message.role === "user";
   const isTyping = !isUser && !message.content;
+  const [flash, setFlash] = useState<{ action: ActionLabel; text: string } | null>(null);
+
+  const showFlash = (action: ActionLabel, text: string) => {
+    setFlash({ action, text });
+    setTimeout(() => setFlash(null), 1500);
+  };
+
+  const actions: ActionLabel[] = ["Copy", "Explain more", "Quiz me", "Save"];
+  const runAction = async (action: ActionLabel) => {
+    switch (action) {
+      case "Copy":
+        navigator.clipboard.writeText(message.content)
+          .then(() => showFlash(action, "Copied"))
+          .catch(() => showFlash(action, "Copy failed"));
+        break;
+      case "Explain more":
+        onExplainMore();
+        break;
+      case "Quiz me":
+        onQuizMe();
+        break;
+      case "Save":
+        showFlash(action, (await onSave()) ? "Saved to notes" : "Save failed");
+        break;
+    }
+  };
+  // Follow-ups make no sense for a reply that has no question before it.
+  const isDisabled = (action: ActionLabel) =>
+    action !== "Copy" && (busy || (action !== "Save" && !prompt));
 
   if (isUser) {
     return (
@@ -483,24 +537,31 @@ function ChatBubble({ message, userInitial }: { message: ChatMessage; userInitia
         {/* Action row */}
         {!isTyping && message.content && (
           <div style={{ display: "flex", gap: 0, marginTop: 10 }}>
-            {["Copy", "Explain more", "Quiz me", "Save"].map((a, i) => (
-              <button key={a} style={{
-                fontSize: 10, color: "var(--text-muted)", padding: `4px ${i === 0 ? "10px 4px 0" : "10px"}`,
-                border: "none", borderRight: i < 3 ? "1px solid var(--border)" : "none",
-                fontFamily: "var(--font-mono)", letterSpacing: "0.06em", textTransform: "uppercase",
-                transition: "color .15s", background: "none", cursor: "pointer",
-              }}
-                onClick={() => {
-                  if (a === "Copy") navigator.clipboard.writeText(message.content);
+            {actions.map((a, i) => {
+              const disabled = isDisabled(a);
+              return (
+                <button key={a} type="button" disabled={disabled} style={{
+                  fontSize: 10, color: "var(--text-muted)", padding: `4px ${i === 0 ? "10px 4px 0" : "10px"}`,
+                  border: "none", borderRight: i < actions.length - 1 ? "1px solid var(--border)" : "none",
+                  fontFamily: "var(--font-mono)", letterSpacing: "0.06em", textTransform: "uppercase",
+                  transition: "color .15s", background: "none",
+                  cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1,
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--cream)")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}
-              >{a}</button>
-            ))}
+                  onClick={() => runAction(a)}
+                  onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.color = "var(--cream)"; }}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}
+                >{flash?.action === a ? flash.text : a}</button>
+              );
+            })}
           </div>
         )}
         {message.flashcards && message.flashcards.length > 0 && (
           <FlashcardDeck flashcards={message.flashcards} />
+        )}
+        {message.quiz && message.quiz.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <QuizDeck quiz={message.quiz} />
+          </div>
         )}
       </div>
     </div>

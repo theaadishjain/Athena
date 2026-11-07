@@ -20,3 +20,4 @@ studyco.db
 # Test artifacts
 test_output.json
 *.log
+!.env.example

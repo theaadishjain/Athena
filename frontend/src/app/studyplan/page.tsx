@@ -11,7 +11,6 @@ import {
   getSessionMessages,
   getStudyPlan,
   getAllNotes,
-  saveNote,
   type PastSummary,
 } from "@/lib/api";
 import { useSession } from "@/lib/session";
@@ -147,11 +146,9 @@ export default function StudyPlanPage() {
       setMemoryUpdated(res.memory_updated);
       setPlanState("success");
 
-      // Save to notes
-      try {
-        await saveNote(selectedSessionId ?? session.session_id, "Study Plan", res.response, token);
-        await fetchPastPlans();
-      } catch { /* non-critical */ }
+      // /plan already saves the plan to notes; saving it here too made every
+      // plan appear twice in Past Plans.
+      fetchPastPlans().catch(() => { /* non-critical */ });
 
     } catch (err) {
       setPlanError(err instanceof Error ? err.message : "Failed to generate plan");

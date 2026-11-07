@@ -7,6 +7,13 @@ class Flashcard(BaseModel):
     question: str
     answer: str
 
+class QuizQuestion(BaseModel):
+    question: str
+    options: list[str]
+    correct: str
+    explanation: str = ""
+
+
 class UnifiedResponse(BaseModel):
     status: Literal["success", "error"]
     agent: Literal["planner", "summarizer", "advisor", "coordinator", "flashcard", "quiz"]
@@ -14,3 +21,4 @@ class UnifiedResponse(BaseModel):
     memory_updated: bool
     fallback: bool
     flashcards: list[Flashcard] | None = None
+    quiz: list[QuizQuestion] | None = None

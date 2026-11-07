@@ -6,7 +6,7 @@ import AgentBadge from "@/components/ui/AgentBadge";
 import FlashcardDeck from "@/components/chat/FlashcardDeck";
 import type { Flashcard, LoadingState } from "@/lib/types";
 import { useAuth } from "@clerk/nextjs";
-import { sendChatMessageStream } from "@/lib/api";
+import { sendChatMessageStream, extractText } from "@/lib/api";
 import { getOrCreateSessionId } from "@/lib/session";
 
 const ACCEPTED_TYPES = ["application/pdf", "text/plain", "text/markdown"];
@@ -91,22 +91,6 @@ export default function FlashcardsPage() {
     setIsDragOver(false);
   }, []);
 
-  // ── Read file text ─────────────────────────────────────
-  const readFileText = (f: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const ext = f.name.slice(f.name.lastIndexOf(".")).toLowerCase();
-      if (ext === ".pdf") {
-        // Can't read PDF client-side — use filename as topic
-        resolve(`[PDF file: ${f.name}]`);
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target?.result as string ?? "");
-      reader.onerror = () => reject(new Error("Failed to read file"));
-      reader.readAsText(f);
-    });
-  };
-
   // ── Generate ──────────────────────────────────────────
   const handleGenerate = useCallback(async () => {
     if (mode === "file" && !file) return;
@@ -126,14 +110,17 @@ export default function FlashcardsPage() {
 
       let chatInput: string;
       if (mode === "file" && file) {
-        const fileText = await readFileText(file);
-        chatInput = `Generate ${cardCount} flashcards from these notes: ${fileText.slice(0, 3000)}`;
+        // The backend parses the file (including PDFs, which the browser
+        // can't read) and caps the text at a model-safe length.
+        const fileText = await extractText(file, token);
+        chatInput = `Generate ${cardCount} flashcards from these notes: ${fileText}`;
       } else {
         chatInput = `Generate ${cardCount} flashcards on the topic: ${topic.trim()}`;
       }
 
       await sendChatMessageStream(
-        { session_id: sessionId, input: chatInput },
+        // One-off generation: don't create a chat session or use chat history.
+        { session_id: sessionId, input: chatInput, persist: false },
         token,
         () => {}, // onToken — ignore streamed text, flashcards come in onDone
         (meta) => {

@@ -7,7 +7,7 @@ import type { UnifiedResponse, LoadingState } from "@/lib/types";
 import { renderWithLatex } from "@/lib/renderMarkdown";
 import { useAuth } from "@clerk/nextjs";
 import { summarizeFile, getAllNotes, saveNote, type PastSummary } from "@/lib/api";
-import { useSession, getOrCreateSessionId } from "@/lib/session";
+import { getOrCreateSessionId } from "@/lib/session";
 
 const ACCEPTED_TYPES = ["application/pdf", "text/plain", "text/markdown"];
 const ACCEPTED_EXTENSIONS = [".pdf", ".txt", ".md"];
@@ -44,7 +44,6 @@ export default function NotesPage() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const session = useSession();
   const { getToken } = useAuth();
   const [pastSummaries, setPastSummaries] = useState<PastSummary[]>([]);
   const [expandedId, setExpandedId] = useState<number | null>(null);

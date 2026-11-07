@@ -19,6 +19,7 @@ export interface UnifiedResponse {
   memory_updated: boolean;
   fallback: boolean;
   flashcards?: Flashcard[];
+  quiz?: QuizQuestion[];
 }
 
 export interface MemoryEntry {
@@ -34,6 +35,7 @@ export interface ChatMessage {
   content: string;
   agent?: string;
   flashcards?: Flashcard[];
+  quiz?: QuizQuestion[];
 }
 
 // ─── API Request Parameter Types ──────────────────────────
@@ -41,6 +43,8 @@ export interface ChatMessage {
 export interface ChatRequest {
   session_id: string;
   input: string;
+  /** false = one-off request: no chat session is created or extended. */
+  persist?: boolean;
 }
 
 export interface PlanRequest {
@@ -49,7 +53,6 @@ export interface PlanRequest {
 }
 
 export interface MemoryQuery {
-  user_id: string;
   memory_type?: string;
   k?: number;
   query?: string;

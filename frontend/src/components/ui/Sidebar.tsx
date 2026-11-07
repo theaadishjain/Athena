@@ -6,7 +6,7 @@ import { UserButton, useUser, useAuth } from "@clerk/nextjs";
 import { useEffect, useState, useCallback } from "react";
 import type { ChatSessionMeta } from "@/lib/types";
 import { listSessions, deleteSession } from "@/lib/api";
-import { setCurrentSession, resetCurrentSession } from "@/lib/session";
+import { setCurrentSession } from "@/lib/session";
 
 const NAV_ITEMS = [
   {

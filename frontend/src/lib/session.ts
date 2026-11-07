@@ -4,7 +4,7 @@
 
 "use client";
 
-import { useRef } from "react";
+import { useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 
 const SESSION_KEY = "studyco_session_id";
@@ -65,11 +65,12 @@ export interface Session {
  */
 export function useSession(): Session {
   const { userId } = useAuth();
-  // Stable session_id across renders — created once per tab
-  const sessionIdRef = useRef<string>(getSessionId());
+  // Stable session_id across renders — created once per tab. useState's lazy
+  // initializer runs once; reading a ref during render is not allowed.
+  const [sessionId] = useState<string>(getSessionId);
 
   return {
     user_id: userId ?? "",
-    session_id: sessionIdRef.current,
+    session_id: sessionId,
   };
 }

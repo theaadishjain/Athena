@@ -1,18 +1,16 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import DashboardLayout from "@/components/ui/DashboardLayout";
 import AgentBadge from "@/components/ui/AgentBadge";
-import type { ChatSessionMeta, LoadingState, ChatMessage } from "@/lib/types";
+import type { ChatSessionMeta, ChatMessage } from "@/lib/types";
 import {
   listSessions,
   getSessionMessages,
   getMemoryProfile,
 } from "@/lib/api";
-import { useSession } from "@/lib/session";
-import { renderWithLatex } from "@/lib/renderMarkdown";
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -37,35 +35,11 @@ function formatHeaderDate(): string {
   const d = new Date();
   const months = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
   const days = ["SUN","MON","TUE","WED","THU","FRI","SAT"];
-  const year = d.getFullYear().toString().replace(/./g, (c, i) => {
-    const roman: Record<string, string> = { "2": "MM", "0": "O", "6": "VI" };
-    return roman[c] ?? c;
-  });
   return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} · ${days[d.getDay()]}`;
-}
-
-function CornerTicks({ size = 8, offset = 0, color = "rgba(237,232,220,0.3)" }: { size?: number; offset?: number; color?: string }) {
-  const corners: React.CSSProperties[] = [
-    { top: offset, left: offset },
-    { top: offset, right: offset },
-    { bottom: offset, right: offset },
-    { bottom: offset, left: offset },
-  ];
-  const rotations = ["rotate(0)", "rotate(90deg)", "rotate(180deg)", "rotate(270deg)"];
-  return (
-    <>
-      {corners.map((style, i) => (
-        <svg key={i} style={{ position: "absolute", ...style, transform: rotations[i] }} width={size} height={size} viewBox="0 0 8 8" fill="none">
-          <path d="M0 8 L0 0 L8 0" stroke={color} strokeWidth="1" />
-        </svg>
-      ))}
-    </>
-  );
 }
 
 export default function DashboardPage() {
   const router = useRouter();
-  const session = useSession();
   const { getToken } = useAuth();
 
   const [sessions, setSessions] = useState<ChatSessionMeta[]>([]);
@@ -128,11 +102,6 @@ export default function DashboardPage() {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionsLoaded]);
-
-  const handleChatSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    router.push("/chat");
-  };
 
   const filteredPreferences = memoryProfile?.preferences
     .map(p => p.replace(/\*\*/g, ""))

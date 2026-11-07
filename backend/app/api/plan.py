@@ -22,6 +22,7 @@ async def plan(
         session_id=payload.session_id,
         input=payload.input,
         intent="planner",
+        history=[],
         memory_context=[],
         agent_output="",
         memory_written=False,
@@ -45,6 +46,6 @@ async def plan(
         status="error" if result.get("error") else "success",
         agent="planner",
         response=result["agent_output"],
-        memory_updated=result["memory_written"],
+        memory_updated=result.get("memory_written", False),
         fallback=bool(result.get("error")),
     )

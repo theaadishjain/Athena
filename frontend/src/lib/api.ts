@@ -24,25 +24,39 @@ export class ApiClientError extends Error {
   }
 }
 
+/** Turn a FastAPI error body ({"detail": ...}) into a readable message. */
+async function errorMessage(res: Response): Promise<string> {
+  const body = await res.text().catch(() => "");
+  try {
+    const detail = JSON.parse(body)?.detail;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail) && detail[0]?.msg) return detail[0].msg;
+  } catch { /* not JSON */ }
+  return body || `Request failed (${res.status})`;
+}
+
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    const body = await res.text().catch(() => "Unknown error");
-    throw new ApiClientError(body, res.status);
+    throw new ApiClientError(await errorMessage(res), res.status);
   }
   return res.json() as Promise<T>;
+}
+
+export interface ChatStreamDone {
+  agent: string
+  memory_updated: boolean
+  fallback: boolean
+  /** Final text of the reply. Replaces whatever was streamed. */
+  content: string
+  flashcards?: Flashcard[]
+  quiz?: QuizQuestion[]
 }
 
 export async function sendChatMessageStream(
   params: ChatRequest,
   token: string,
   onToken: (token: string) => void,
-  onDone: (meta: {
-    agent: string
-    memory_updated: boolean
-    fallback: boolean
-    flashcards?: Flashcard[]
-    quiz?: QuizQuestion[]
-  }) => void,
+  onDone: (meta: ChatStreamDone) => void,
   onError: (error: string) => void
 ): Promise<void> {
   try {
@@ -56,12 +70,13 @@ export async function sendChatMessageStream(
     })
 
     if (!res.ok || !res.body) {
-      throw new ApiClientError("Stream failed", res.status)
+      throw new ApiClientError(res.ok ? "Stream failed" : await errorMessage(res), res.status)
     }
 
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ""
+    let gotDone = false
 
     while (true) {
       const { done, value } = await reader.read()
@@ -81,10 +96,12 @@ export async function sendChatMessageStream(
           if (parsed.type === "token") {
             onToken(parsed.content)
           } else if (parsed.type === "done") {
+            gotDone = true
             onDone({
               agent: parsed.agent,
               memory_updated: parsed.memory_updated,
               fallback: parsed.fallback,
+              content: parsed.content ?? "",
               flashcards: parsed.flashcards ?? undefined,
               quiz: parsed.quiz ?? undefined,
             })
@@ -93,6 +110,9 @@ export async function sendChatMessageStream(
           // skip malformed chunk
         }
       }
+    }
+    if (!gotDone) {
+      onError("The connection closed before the reply finished. Please try again.")
     }
   } catch (err) {
     if (err instanceof ApiClientError) {
@@ -128,8 +148,7 @@ export async function getStudyPlan(
 }
 
 // ─── Summarize (file upload) ──────────────────────────────
-// Backend expects JSON { user_id, session_id, input } where input
-// is the extracted text content of the file — not multipart/form-data.
+// multipart/form-data: the file plus session_id. The backend extracts the text.
 
 export async function summarizeFile(
   file: File,
@@ -149,6 +168,32 @@ export async function summarizeFile(
       body: formData,
     })
     return handleResponse<UnifiedResponse>(res)
+  } catch (err) {
+    if (err instanceof ApiClientError) throw err
+    throw new ApiClientError(
+      "Cannot reach the backend. Is it running on " + BASE_URL + "?"
+    )
+  }
+}
+
+// ─── Extract text (file upload) ───────────────────────────
+// Returns the document's plain text, parsed by the backend (handles PDFs).
+
+export async function extractText(
+  file: File,
+  token: string
+): Promise<string> {
+  const formData = new FormData()
+  formData.append("file", file)
+
+  try {
+    const res = await fetch(`${BASE_URL}/extract`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}` },
+      body: formData,
+    })
+    const data = await handleResponse<{ filename: string; text: string }>(res)
+    return data.text
   } catch (err) {
     if (err instanceof ApiClientError) throw err
     throw new ApiClientError(
@@ -234,13 +279,21 @@ export async function getSessionMessages(
       headers: { Authorization: `Bearer ${token}` },
     });
     const msgs = await handleResponse<
-      { role: string; content: string; agent?: string }[]
+      {
+        role: string;
+        content: string;
+        agent?: string;
+        flashcards?: Flashcard[] | null;
+        quiz?: QuizQuestion[] | null;
+      }[]
     >(res);
     return msgs.map((m) => ({
       id: crypto.randomUUID(),
       role: m.role as "user" | "assistant",
       content: m.content,
       agent: m.agent,
+      flashcards: m.flashcards ?? undefined,
+      quiz: m.quiz ?? undefined,
     }));
   } catch (err) {
     if (err instanceof ApiClientError) throw err;
@@ -290,7 +343,7 @@ export async function saveNote(
   filename: string,
   summary: string,
   token: string
-): Promise<void> {
+): Promise<boolean> {
   try {
     const res = await fetch(`${BASE_URL}/sessions/${sessionId}/notes`, {
       method: "POST",
@@ -301,9 +354,11 @@ export async function saveNote(
       body: JSON.stringify({ filename, summary }),
     });
     await handleResponse(res);
+    return true;
   } catch {
     // Non-critical — don't break UI if save fails
     console.error("Failed to save note");
+    return false;
   }
 }
 

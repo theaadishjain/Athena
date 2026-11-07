@@ -13,19 +13,19 @@ async def get_memory_profile(
 ) -> dict:
     provider = get_memory_provider()
 
-    preferences = provider.read_memory(
+    preferences = await provider.aread_memory(
         user_id=user_id,
         memory_type="preferences",
         query="user preferences",
         k=3,
     )
-    weak_subjects = provider.read_memory(
+    weak_subjects = await provider.aread_memory(
         user_id=user_id,
         memory_type="weak_subjects",
         query="weak subjects",
         k=3,
     )
-    past_topics = provider.read_memory(
+    past_topics = await provider.aread_memory(
         user_id=user_id,
         memory_type="past_chats",
         query="topics studied",
@@ -45,7 +45,7 @@ async def memory_read(
     user_id: str = Depends(get_current_user),
 ) -> MemoryReadResponse:
     provider = get_memory_provider()
-    result = provider.read_memory_result(
+    result = await provider.aread_memory_result(
         user_id=user_id,
         memory_type=payload.memory_type,
         query=payload.query or payload.memory_type,
@@ -65,7 +65,7 @@ async def memory_write(
     user_id: str = Depends(get_current_user),
 ) -> dict:
     provider = get_memory_provider()
-    result = provider.write_memory_result(
+    result = await provider.awrite_memory_result(
         user_id=user_id,
         memory_type=payload.memory_type,
         content=payload.content,

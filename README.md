@@ -1,9 +1,8 @@
-[README .md](https://github.com/user-attachments/files/29661357/README.md)
 # Athena — AI-Powered Academic Assistant
 
 > *Your quiet study partner. One conversation. Six specialists.*
 
-[![Next.js](https://img.shields.io/badge/Next.js-14-black?style=flat-square&logo=next.js)](https://nextjs.org)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js)](https://nextjs.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com)
 [![LangGraph](https://img.shields.io/badge/LangGraph-multi--agent-orange?style=flat-square)](https://langchain-ai.github.io/langgraph)
 [![Clerk](https://img.shields.io/badge/Clerk-auth-purple?style=flat-square)](https://clerk.com)
@@ -45,12 +44,13 @@ Unlike ChatGPT and similar tools, Athena **remembers you permanently** using vec
 
 - **6 Specialist Agents** via LangGraph — Coordinator, Advisor, Planner, Summarizer, Flashcard, Quiz
 - **Persistent Vector Memory** — MemPalace + ChromaDB, namespaced by Clerk userId
-- **Real-time SSE Streaming** — responses appear word-by-word
+- **Real-time SSE Streaming** — tokens are streamed from the model as they are generated
 - **Interactive Flashcards** — 10 / 20 / 30 flip cards generated from any topic
 - **MCQ Quiz** — 5 questions with instant feedback and final score
 - **Document Intelligence** — PDF, TXT, MD upload → structured summary + revision checklist
 - **Study Plan Generator** — session-based day-by-day exam preparation
-- **Cross-device Session History** — all chats, notes, and plans sync via Clerk auth
+- **Conversation context** — the last few messages of a chat are sent with each request, so follow-ups like "explain more" work
+- **Cross-device Session History** — all chats (including flashcards and quizzes), notes, and plans sync via Clerk auth
 - **Memory Profile** — dashboard shows what Athena knows about your study habits
 - **Export** — download chat as Markdown, summaries as PDF or Markdown
 - **Markdown + KaTeX + Syntax Highlighting** — full academic content rendering
@@ -98,13 +98,13 @@ read top-k → inject into AcademicState → agent generates → write to Chroma
 
 | Layer | Technology |
 |---|---|
-| Frontend | Next.js 14 (App Router), TypeScript, Tailwind CSS |
-| Auth | Clerk (JWT, permanent userId, cross-device) |
+| Frontend | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4 |
+| Auth | Clerk (RS256 JWT verified with PyJWT, permanent userId, cross-device) |
 | Backend | Python 3.11, FastAPI, LangGraph |
 | LLM | OpenRouter → google/gemini-2.5-flash |
 | Memory | MemPalace + ChromaDB (vector DB) |
 | Database | SQLite via SQLAlchemy async (aiosqlite) |
-| Rendering | marked.js + KaTeX + highlight.js |
+| Rendering | marked.js + KaTeX + highlight.js, sanitized with DOMPurify |
 | Deploy | Docker, Vercel (frontend), Railway (backend) |
 
 ---
@@ -112,7 +112,7 @@ read top-k → inject into AcademicState → agent generates → write to Chroma
 ## Project Structure
 
 ```
-StudyCo/
+Athena/
 ├── backend/
 │   ├── app/
 │   │   ├── agents/
@@ -128,8 +128,10 @@ StudyCo/
 │   │   ├── memory/             # MemPalace adapter, provider, retrieval
 │   │   ├── schemas/            # Request/response DTOs
 │   │   └── services/           # LLM service, ingest
+│   ├── tests/              # pytest suite (fake LLM, no API key needed)
 │   ├── Dockerfile
-│   ├── requirements.txt
+│   ├── requirements.txt    # pinned runtime deps
+│   ├── requirements-dev.txt
 │   └── .env.example
 ├── frontend/
 │   ├── src/
@@ -180,8 +182,18 @@ Fill in your keys (see [Environment Variables](#environment-variables) below).
 
 ### 3. Run
 
+`NEXT_PUBLIC_*` values are baked into the frontend at build time, so the Clerk
+publishable key is passed as a build arg. Put it in a `.env` file next to
+`docker-compose.yml` (Compose reads it automatically):
+
+```env
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+# Optional: where the *browser* reaches the backend (default http://localhost:8000)
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 ### 4. Open
@@ -207,16 +219,31 @@ python -m venv venv
 source venv/bin/activate
 
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+# --reload-dir keeps the reloader from restarting when venv/ changes
+uvicorn app.main:app --reload --reload-dir app --port 8000
+```
+
+Run the tests (no API keys needed; the LLM is faked):
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest tests
 ```
 
 ### Frontend
 
 ```bash
 cd frontend
+cp .env.local.example .env.local
 npm install
 npm run dev
 ```
+
+> **No Clerk account yet?** Leave the Clerk keys empty. Clerk runs in *keyless*
+> mode and writes temporary dev keys to `frontend/.clerk/.tmp/keyless.json`.
+> Copy its `secretKey` into `backend/.env` as `CLERK_SECRET_KEY` so the backend
+> accepts the same tokens. If the frontend starts on a port other than 3000,
+> add that origin to `CORS_ORIGINS`.
 
 ---
 
@@ -234,6 +261,12 @@ MEMORY_TOP_K=3
 CORS_ORIGINS=http://localhost:3000
 DATABASE_URL=sqlite+aiosqlite:///./studyco.db
 APP_URL=http://localhost:3000
+
+# Optional
+CLERK_ISSUER=https://your-app.clerk.accounts.dev   # enforce token issuer
+CLERK_AUTHORIZED_PARTIES=                          # allowed `azp`; defaults to CORS_ORIGINS
+MAX_UPLOAD_MB=10                                   # /summarize upload limit
+CHAT_HISTORY_MESSAGES=10                           # earlier messages sent to the model
 ```
 
 ### Frontend (`frontend/.env.local`)
@@ -259,15 +292,15 @@ NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard
 
 ## Agent System
 
-All requests route through a single `/chat` endpoint. The Coordinator detects intent and routes automatically.
+All requests route through a single `/chat` endpoint. The Coordinator detects intent and routes automatically. Slash commands always win; otherwise only the start of the message is matched, so pasted notes don't change the route.
 
 | Agent | Trigger keywords | Output |
 |---|---|---|
-| **Advisor** | explain, how does, teach me, help me | Streaming text (brief/detailed auto-mode) |
-| **Planner** | plan, schedule, exam, deadline | Day-by-day study schedule |
+| **Advisor** | explain, what/why/how questions, `/explain`, `/solve` (default) | Streaming text (brief/detailed auto-mode) |
+| **Planner** | plan, schedule, timetable, deadline, exam + a time frame ("in 3 days", "next week"), `/plan` | Day-by-day study schedule |
 | **Summarizer** | /notes page + file upload | Structured summary + checklist |
-| **Flashcard** | flashcard, make cards, memorize | 10/20/30 Q&A flip cards |
-| **Quiz** | quiz, test me, mcq, practice | 5 MCQ with scoring |
+| **Flashcard** | flashcard(s), make cards, memorize, `/flashcards` | 10/20/30 Q&A flip cards |
+| **Quiz** | quiz, quiz me, test me, mcq, practice questions, `/quiz` | 5 MCQ with scoring |
 
 ### Memory write ownership (strictly enforced)
 
@@ -287,16 +320,18 @@ All routes except `/health` require `Authorization: Bearer <clerk_jwt>` header.
 
 ```
 GET  /health                        → { status: "ok" }
-POST /chat                          → SSE stream (token by token)
+POST /chat                          → SSE stream: `token` events, then one `done` event
+                                      (saves both messages; `persist: false` for one-off calls)
 POST /plan                          → UnifiedResponse JSON
 POST /summarize                     → multipart/form-data
+POST /extract                       → multipart/form-data → { filename, text } (used by Flashcards for PDFs)
 GET  /memory/profile                → { preferences, weak_subjects, recent_topics }
 GET  /sessions                      → list user sessions
 POST /sessions                      → create session
 GET  /sessions/{id}/messages        → load chat history
 POST /sessions/{id}/messages        → save message
 GET  /sessions/notes/all            → past summaries + study plans
-DELETE /sessions/{id}               → delete session
+DELETE /sessions/{id}               → delete session and its messages (notes are kept)
 DELETE /sessions/empty              → cleanup empty sessions
 ```
 
