@@ -19,7 +19,26 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider
-      appearance={{ baseTheme: dark, variables: { fontFamily: "'Figtree', system-ui, sans-serif" } }}
+      appearance={{
+        // Clerk v7 reads `theme`; the old `baseTheme` key is ignored.
+        theme: dark,
+        variables: {
+          fontFamily: "'Figtree', system-ui, sans-serif",
+          colorPrimary: "#ede8dc",
+          colorPrimaryForeground: "#0a0a0c",
+          colorBackground: "#111114",
+          colorForeground: "#ede8dc",
+          colorMutedForeground: "rgba(237,232,220,0.64)",
+          colorInput: "#16161a",
+          colorInputForeground: "#ede8dc",
+          borderRadius: "0.25rem",
+        },
+      }}
+      // The dev Clerk instance is named "My Application"; say Athena instead.
+      localization={{
+        signIn: { start: { title: "Sign in to Athena", subtitle: "Welcome back! Sign in to continue studying" } },
+        signUp: { start: { title: "Create your Athena account", subtitle: "Free to use. Sign up to start studying" } },
+      }}
       afterSignOutUrl="/"
       signInUrl="/sign-in"
       signUpUrl="/sign-up"

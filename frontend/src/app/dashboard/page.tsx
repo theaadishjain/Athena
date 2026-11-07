@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth, useUser } from "@clerk/nextjs";
 import DashboardLayout from "@/components/ui/DashboardLayout";
 import AgentBadge from "@/components/ui/AgentBadge";
 import Skeleton, { SkeletonRows } from "@/components/ui/Skeleton";
+import { plural } from "@/lib/format";
 import type { ChatSessionMeta, ChatMessage } from "@/lib/types";
 import {
   listSessions,
@@ -57,6 +58,7 @@ type MemoryProfile = {
 export default function DashboardPage() {
   const router = useRouter();
   const { getToken } = useAuth();
+  const { user } = useUser();
 
   const [sessions, setSessions] = useState<ChatSessionMeta[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
@@ -174,7 +176,7 @@ export default function DashboardPage() {
       <div className="page-scroll">
 
         {/* Subtle orbital backdrop */}
-        <div className="pointer-events-none absolute top-0 right-0 z-0 h-[720px] w-[720px]">
+        <div className="pointer-events-none absolute top-0 right-0 z-0 h-[720px] w-[720px] overflow-hidden">
           <div className="absolute" style={{
             width: 900, height: 900, top: -300, right: -200,
             background: "radial-gradient(circle, rgba(237,232,220,0.04), transparent 70%)",
@@ -211,7 +213,7 @@ export default function DashboardPage() {
             </div>
             <h1 className="h-xl mb-[18px]">
               {greeting},<br />
-              <em className="serif-i">student.</em>
+              <em className="serif-i">{user?.firstName || "student"}.</em>
             </h1>
             <div className="text-body mb-6 max-w-[500px]">
               {!sessionsLoaded ? (
@@ -286,7 +288,7 @@ export default function DashboardPage() {
           {/* Quick tiles */}
           <div className="mb-7 grid grid-cols-4 border-t border-line">
             {[
-              { label: "Chat", sub: `${sessions.length} sessions`, agent: "Advisor", href: "/chat",
+              { label: "Chat", sub: plural(sessions.length, "session"), agent: "Advisor", href: "/chat",
                 icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> },
               { label: "Notes", sub: "Summarize files", agent: "Summarizer", href: "/notes",
                 icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
@@ -396,7 +398,7 @@ export default function DashboardPage() {
 
           {/* Footer colophon */}
           <div className="flex justify-between border-t border-line pt-4">
-            <span className="label">{sessions.length} sessions · your study space</span>
+            <span className="label">{plural(sessions.length, "session")} · your study space</span>
             <span className="label">
               {stats
                 ? stats.streak_days > 0

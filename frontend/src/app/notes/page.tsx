@@ -11,6 +11,7 @@ import { renderWithLatex } from "@/lib/renderMarkdown";
 import { useAuth } from "@clerk/nextjs";
 import { summarizeFileStream, flashcardsFromFile, getAllNotes, saveNote, gradeCard, type PastSummary } from "@/lib/api";
 import { getOrCreateSessionId } from "@/lib/session";
+import { plural } from "@/lib/format";
 
 const ACCEPTED_TYPES = ["application/pdf", "text/plain", "text/markdown"];
 const ACCEPTED_EXTENSIONS = [".pdf", ".txt", ".md"];
@@ -230,7 +231,7 @@ export default function NotesPage() {
           {/* Running header */}
           <div className="running-head mb-7">
             <span className="label">§ Notes & summaries</span>
-            <span className="label">{pastSummaries.length} documents</span>
+            <span className="label">{plural(pastSummaries.length, "document")}</span>
             <span className="label">Powered by Summarizer</span>
           </div>
 
@@ -387,7 +388,7 @@ export default function NotesPage() {
                         </div>
                       ) : cards && (
                         <>
-                          <div className="label mb-3">§ Flashcards — {cards.length} cards</div>
+                          <div className="label mb-3">§ Flashcards — {plural(cards.length, "card")}</div>
                           <FlashcardDeck
                             flashcards={cards}
                             onGrade={async (card: Flashcard, grade: ReviewGrade) => {

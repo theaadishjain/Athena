@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 import { setCurrentSession, resetCurrentSession } from "@/lib/session";
 import { renderWithLatex } from "@/lib/renderMarkdown";
+import { plural } from "@/lib/format";
 
 export default function ChatPage() {
   return (
@@ -55,15 +56,14 @@ function ChatPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [showSlash, setShowSlash] = useState(false);
+  // Slash-command menu: highlighted row, and whether Esc closed it.
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const pendingQueryRef = useRef<string | null>(null);
   const { getToken } = useAuth();
 
-  useEffect(() => {
-    setShowSlash(input.startsWith("/"));
-  }, [input]);
 
   // ── On mount / URL change: load session ─────────────────
   useEffect(() => {
@@ -228,15 +228,45 @@ function ChatPageContent() {
 
   const handleCardGrade = useCallback(async (prompt: string, card: Flashcard, grade: ReviewGrade): Promise<boolean> => {
     const token = await getToken();
-    return token ? gradeCard(card, grade, prompt.trim().slice(0, 80) || "Chat flashcards", token) : false;
+    // "make 10 flashcards on binary trees" -> deck "binary trees"
+    const deck = prompt
+      .replace(/^\s*\/(?:flashcards?|cards)\b/i, "")
+      .replace(/^\s*(?:please\s+)?(?:make|create|generate|give me)?\s*(?:\d+\s+)?(?:flash\s?cards?|cards)\s*(?:on|about|for|from)?\s*:?\s*/i, "")
+      .trim();
+    return token ? gradeCard(card, grade, deck.slice(0, 80) || "Chat flashcards", token) : false;
   }, [getToken]);
 
   const handleSendRef = useRef(handleSend);
   useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+  // The menu is open while typing a command name ("/pl"), filtered by it.
+  const slashMatches = /^\/\S*$/.test(input)
+    ? SLASH_COMMANDS.filter((c) => c.cmd.startsWith(input.toLowerCase()))
+    : [];
+  const slashOpen = slashMatches.length > 0 && !slashDismissed;
+  const activeSlash = Math.min(slashIndex, Math.max(0, slashMatches.length - 1));
+
+  const chooseCommand = useCallback((cmd: string) => {
+    setInput(cmd + " ");
+    setSlashIndex(0);
+    inputRef.current?.focus();
+  }, []);
+
+  const handleInputChange = (value: string) => {
+    setInput(value);
+    setSlashDismissed(false);
+    setSlashIndex(0);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (slashOpen) {
+      if (e.key === "ArrowDown") { e.preventDefault(); setSlashIndex((activeSlash + 1) % slashMatches.length); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); setSlashIndex((activeSlash - 1 + slashMatches.length) % slashMatches.length); return; }
+      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); chooseCommand(slashMatches[activeSlash].cmd); return; }
+      if (e.key === "Escape") { e.preventDefault(); setSlashDismissed(true); return; }
+    }
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
-  }, [handleSend]);
+  };
 
   const canSend = loadingState !== "loading" && !!input.trim();
 
@@ -253,7 +283,7 @@ function ChatPageContent() {
             </h2>
           </div>
           <div className="flex items-center gap-2">
-            <span className="label mr-1">{messages.length} messages</span>
+            <span className="label mr-1">{plural(messages.length, "message")}</span>
             {messages.length > 0 && (
               <button id="export-chat-btn" onClick={exportChatAsMarkdown} className="btn btn-subtle btn-sm">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -332,16 +362,20 @@ function ChatPageContent() {
         <div className="composer">
           <div className="relative mx-auto max-w-[820px]">
             {/* Slash commands popup */}
-            {showSlash && (
-              <div className="menu absolute right-0 bottom-[calc(100%+10px)] left-0 z-10">
+            {slashOpen && (
+              <div className="menu absolute right-0 bottom-[calc(100%+10px)] left-0 z-10" role="listbox" aria-label="Commands">
                 <div className="flex justify-between border-b border-line px-3 py-2">
                   <span className="label">§ Commands</span>
-                  <span className="label">↑↓ nav · ↵ select</span>
+                  <span className="label">↑↓ nav · ↵ select · esc close</span>
                 </div>
-                {SLASH_COMMANDS.map((s, i) => (
+                {slashMatches.map((s, i) => (
                   <div key={s.cmd}
-                    onClick={() => { setInput(s.cmd + " "); setShowSlash(false); inputRef.current?.focus(); }}
-                    className={`menu-item ${i === 0 ? "is-active" : ""}`}
+                    role="option"
+                    aria-selected={i === activeSlash}
+                    onMouseDown={(e) => e.preventDefault() /* keep focus in the textarea */}
+                    onMouseEnter={() => setSlashIndex(i)}
+                    onClick={() => chooseCommand(s.cmd)}
+                    className={`menu-item ${i === activeSlash ? "is-active" : ""}`}
                   >
                     <div className="font-mono text-[13px] font-medium text-cream">{s.cmd}</div>
                     <div className="text-meta mt-0.5">{s.desc}</div>
@@ -355,7 +389,7 @@ function ChatPageContent() {
                 ref={inputRef}
                 id="chat-input"
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => handleInputChange(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Ask Athena anything…"
                 rows={1}

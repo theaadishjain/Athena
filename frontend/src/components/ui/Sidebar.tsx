@@ -189,6 +189,20 @@ export default function Sidebar() {
     router.push("/chat?new=" + Date.now());
   }, [router]);
 
+  // ⌘K on Mac, Ctrl+K elsewhere: start a new chat from any page.
+  const [isMac, setIsMac] = useState(false);
+  useEffect(() => { setIsMac(/Mac|iPhone|iPad/.test(navigator.userAgent)); }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        handleNewChat();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleNewChat]);
+
   const handleSessionClick = useCallback((session: ChatSessionMeta) => {
     setCurrentSession(session.id);
     setActiveSessionId(session.id);
@@ -253,14 +267,20 @@ export default function Sidebar() {
 
         {/* New Chat */}
         <div className="px-3 pb-2.5 mb-2.5 border-b border-line">
-          <button id="sidebar-new-chat" onClick={handleNewChat} className="btn btn-primary btn-block justify-start text-[13.5px] py-2.5 px-3">
+          <button
+            id="sidebar-new-chat"
+            onClick={handleNewChat}
+            aria-keyshortcuts={isMac ? "Meta+K" : "Control+K"}
+            title={`New chat (${isMac ? "⌘K" : "Ctrl+K"})`}
+            className="btn btn-primary btn-block justify-start text-[13.5px] py-2.5 px-3"
+          >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/>
               <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
             New Chat
             <span className="ml-auto flex gap-0.5">
-              <span className="kbd" style={{ background: "rgba(0,0,0,0.12)", borderColor: "rgba(0,0,0,0.2)", color: "rgba(10,10,12,0.7)" }}>⌘</span>
+              <span className="kbd" style={{ background: "rgba(0,0,0,0.12)", borderColor: "rgba(0,0,0,0.2)", color: "rgba(10,10,12,0.7)" }}>{isMac ? "⌘" : "Ctrl"}</span>
               <span className="kbd" style={{ background: "rgba(0,0,0,0.12)", borderColor: "rgba(0,0,0,0.2)", color: "rgba(10,10,12,0.7)" }}>K</span>
             </span>
           </button>

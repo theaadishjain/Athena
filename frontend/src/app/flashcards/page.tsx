@@ -9,6 +9,7 @@ import type { Flashcard, LoadingState, ReviewGrade } from "@/lib/types";
 import { useAuth } from "@clerk/nextjs";
 import { sendChatMessageStream, flashcardsFromFile, gradeCard, getDueCards, type DueCards } from "@/lib/api";
 import { getOrCreateSessionId } from "@/lib/session";
+import { plural } from "@/lib/format";
 
 const ACCEPTED_TYPES = ["application/pdf", "text/plain", "text/markdown"];
 const ACCEPTED_EXTENSIONS = [".pdf", ".txt", ".md"];
@@ -212,7 +213,7 @@ export default function FlashcardsPage() {
             <div className="panel mb-6">
               <div className="panel-head justify-between px-5">
                 <span className="label">§ Due for review</span>
-                <span className="text-meta">{due.total} cards on your schedule</span>
+                <span className="text-meta">{plural(due.total, "card")} on your schedule</span>
               </div>
               {reviewCards ? (
                 <div className="flex flex-col items-center gap-3 px-6 py-5">
@@ -374,7 +375,7 @@ export default function FlashcardsPage() {
               <CornerTicks />
               <div className="panel-head justify-between px-5">
                 <div className="flex items-center gap-2.5">
-                  <span className="label">§ Generated — {flashcards.length} cards</span>
+                  <span className="label">§ Generated — {plural(flashcards.length, "card")}</span>
                   <AgentBadge agent="flashcard" />
                 </div>
                 <div className="flex items-center gap-3">
